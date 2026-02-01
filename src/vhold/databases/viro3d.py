@@ -1,5 +1,6 @@
 """Viro3D database handling for vhold."""
 
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -22,10 +23,10 @@ def load_viro3d_metadata(db_dir: Path | None = None) -> pd.DataFrame:
     if db_dir is None:
         db_dir = get_db_dir()
 
-    # Try multiple possible locations for extracted metadata
+    # The actual file is Viro3D_proteins_list.csv
     possible_paths = [
-        Path(db_dir) / "viro3d" / "viro3d_metadata.tsv",
-        Path(db_dir) / "viro3d" / "viro3d_metadata" / "viro3d_metadata.tsv",
+        Path(db_dir) / "viro3d" / "viro3d_metadata" / "Viro3D_proteins_list.csv",
+        Path(db_dir) / "viro3d" / "Viro3D_proteins_list.csv",
     ]
 
     metadata_path = None
@@ -41,28 +42,27 @@ def load_viro3d_metadata(db_dir: Path | None = None) -> pd.DataFrame:
         )
 
     logger.info(f"Loading Viro3D metadata from {metadata_path}")
-    df = pd.read_csv(metadata_path, sep="\t")
+    df = pd.read_csv(metadata_path)
     logger.info(f"Loaded {len(df)} Viro3D entries")
 
     return df
 
 
 def load_viro3d_annotations(db_dir: Path | None = None) -> pd.DataFrame:
-    """Load Viro3D expanded annotations.
+    """Load Viro3D expanded annotations (Pfam).
 
     Args:
         db_dir: Database directory
 
     Returns:
-        DataFrame with expanded annotation information
+        DataFrame with Pfam annotation information
     """
     if db_dir is None:
         db_dir = get_db_dir()
 
-    # Try multiple possible locations
+    # Try to load Pfam annotations (most useful for functional annotation)
     possible_paths = [
-        Path(db_dir) / "viro3d" / "viro3d_annotation_expansion.tsv",
-        Path(db_dir) / "viro3d" / "viro3d_annotation_expansion" / "viro3d_annotation_expansion.tsv",
+        Path(db_dir) / "viro3d" / "viro3d_annotation_expansion" / "Viro3D_proteins_with_Pfam_annotation_expansion.csv",
     ]
 
     annotations_path = None
@@ -78,10 +78,29 @@ def load_viro3d_annotations(db_dir: Path | None = None) -> pd.DataFrame:
         )
 
     logger.info(f"Loading Viro3D annotations from {annotations_path}")
-    df = pd.read_csv(annotations_path, sep="\t")
+    df = pd.read_csv(annotations_path)
     logger.info(f"Loaded {len(df)} Viro3D annotation entries")
 
     return df
+
+
+def normalize_viro3d_target_id(target_id: str) -> str:
+    """Normalize a Foldseek target ID to match Viro3D ID format.
+
+    Foldseek returns IDs like: CF-QHD43423.2_10195_relaxed
+    Viro3D metadata has IDs like: QHD43423.2_10195
+
+    Args:
+        target_id: Target ID from Foldseek hit
+
+    Returns:
+        Normalized ID for matching against Viro3D metadata
+    """
+    # Remove prefix (CF- for ColabFold, EF- for ESMFold)
+    normalized = re.sub(r"^[CE]F-", "", target_id)
+    # Remove suffix (_relaxed or _unrelaxed)
+    normalized = re.sub(r"_(relaxed|unrelaxed)$", "", normalized)
+    return normalized
 
 
 def get_viro3d_annotation(
@@ -94,54 +113,71 @@ def get_viro3d_annotation(
     Args:
         target_id: Target protein ID from Foldseek hit
         metadata_df: Viro3D metadata DataFrame
-        annotations_df: Optional expanded annotations DataFrame
+        annotations_df: Optional Pfam annotations DataFrame
 
     Returns:
         Dict with annotation info or None if not found
     """
-    # Viro3D IDs may have format variations
-    matches = metadata_df[metadata_df.iloc[:, 0] == target_id]
+    # Normalize the target ID for matching
+    normalized_id = normalize_viro3d_target_id(target_id)
+
+    # Match against "Viro3D ID" column
+    matches = metadata_df[metadata_df["Viro3D ID"] == normalized_id]
 
     if len(matches) == 0:
-        # Try partial match
-        matches = metadata_df[metadata_df.iloc[:, 0].str.contains(target_id, na=False)]
+        # Try partial match on GenBank Protein ID (the part before the underscore)
+        genbank_id = normalized_id.split("_")[0] if "_" in normalized_id else normalized_id
+        matches = metadata_df[
+            metadata_df["GenBank Protein ID"].str.contains(genbank_id, na=False)
+        ]
 
     if len(matches) == 0:
+        logger.debug(f"No Viro3D match for {target_id} (normalized: {normalized_id})")
         return None
 
     row = matches.iloc[0]
 
+    # Extract description from "Viro3D Name" field
+    # Format is typically: "Gene: N; Product: nucleocapsid phosphoprotein"
+    viro3d_name = row.get("Viro3D Name", "")
+    description = viro3d_name
+
+    # Parse out the Product if available
+    if "Product:" in str(viro3d_name):
+        product_match = re.search(r"Product:\s*(.+?)(?:;|$)", str(viro3d_name))
+        if product_match:
+            description = product_match.group(1).strip()
+
+    # Parse out the Gene if available
+    gene = ""
+    if "Gene:" in str(viro3d_name):
+        gene_match = re.search(r"Gene:\s*(.+?)(?:;|$)", str(viro3d_name))
+        if gene_match:
+            gene = gene_match.group(1).strip()
+
+    # Build annotation dict
     annotation = {
         "target_id": target_id,
         "source": "viro3d",
+        "viro3d_id": row.get("Viro3D ID", ""),
+        "description": description if description else "viral protein",
+        "organism": row.get("ICTV Species", ""),
+        "gene": gene,
+        "genbank_id": row.get("GenBank Protein ID", ""),
+        "uniprot_id": row.get("UniProt ID", ""),
+        "protein_length": row.get("Protein Length", ""),
     }
 
-    # Map common column names (adjust based on actual Viro3D metadata structure)
-    column_mapping = {
-        "protein_id": ["protein_id", "id", "accession", "uniprot_id"],
-        "description": ["description", "protein_name", "name", "function", "product"],
-        "organism": ["organism", "species", "source_organism", "host"],
-        "virus_name": ["virus_name", "virus", "species_name"],
-        "gene": ["gene", "gene_name"],
-        "uniprot_id": ["uniprot_id", "uniprot", "uniprot_accession"],
-        "pdb_id": ["pdb_id", "pdb", "structure_id"],
-        "go_terms": ["go_terms", "go", "go_annotation"],
-        "pfam": ["pfam", "pfam_id", "domains"],
-    }
-
-    for field, possible_cols in column_mapping.items():
-        for col in possible_cols:
-            if col in row.index and pd.notna(row[col]):
-                annotation[field] = str(row[col])
-                break
-
-    # Merge with expanded annotations if available
-    if annotations_df is not None:
-        ann_matches = annotations_df[annotations_df.iloc[:, 0] == target_id]
+    # Add Pfam annotation if available
+    if annotations_df is not None and len(annotations_df) > 0:
+        ann_matches = annotations_df[annotations_df["Viro3D ID"] == normalized_id]
         if len(ann_matches) > 0:
             ann_row = ann_matches.iloc[0]
-            for col in ann_row.index:
-                if col not in annotation and pd.notna(ann_row[col]):
-                    annotation[col] = str(ann_row[col])
+            pfam = ann_row.get("Pfam Annotation", "")
+            if pd.notna(pfam) and pfam:
+                annotation["pfam"] = pfam
+                # If we don't have a good description, use Pfam
+                if annotation["description"] in ("viral protein", ""):
+                    annotation["description"] = f"Pfam: {pfam}"
 
     return annotation
