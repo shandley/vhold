@@ -44,7 +44,7 @@ VHOLD_DB_DIR = get_db_dir()
 VHOLD_MODEL_DIR = get_model_dir()
 
 # Database URLs and files
-BFVD_BASE_URL = "https://bfvd.steineggerlab.workers.dev"
+BFVD_BASE_URL = "https://bfvd.steineggerlab.workers.dev/latest"
 BFVD_FILES = {
     "foldseekdb": "bfvd_foldseekdb.tar.gz",  # 533.8 MB
     "metadata": "bfvd_metadata.tsv",  # 14.6 MB

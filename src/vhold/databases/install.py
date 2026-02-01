@@ -82,7 +82,13 @@ def extract_tarball(
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     with tarfile.open(tar_path, "r:gz") as tar:
-        tar.extractall(dest_dir)
+        # Use fully_trusted filter for database files from known sources
+        # Some databases (like Viro3D) contain symlinks that need this
+        try:
+            tar.extractall(dest_dir, filter='fully_trusted')
+        except TypeError:
+            # Python < 3.12 doesn't have filter parameter
+            tar.extractall(dest_dir)
 
 
 def install_bfvd(db_dir: Path, force: bool = False) -> None:
@@ -229,7 +235,8 @@ def get_bfvd_db_path(db_dir: Path | None = None) -> Path:
     """
     if db_dir is None:
         db_dir = get_db_dir()
-    return Path(db_dir) / "bfvd" / "bfvd_foldseekdb" / "bfvd_foldseekdb"
+    # Database files are extracted directly: bfvd/bfvd, bfvd/bfvd_ss, etc.
+    return Path(db_dir) / "bfvd" / "bfvd"
 
 
 def get_viro3d_db_path(db_dir: Path | None = None) -> Path:
@@ -243,7 +250,8 @@ def get_viro3d_db_path(db_dir: Path | None = None) -> Path:
     """
     if db_dir is None:
         db_dir = get_db_dir()
-    return Path(db_dir) / "viro3d" / "foldseekViro3D" / "foldseekViro3D"
+    # Database files are in foldseekViro3D/viro3d, viro3d_ss, etc.
+    return Path(db_dir) / "viro3d" / "foldseekViro3D" / "viro3d"
 
 
 def install_databases(
