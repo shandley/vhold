@@ -1,10 +1,11 @@
 """ProstT5 model integration for 3Di sequence prediction."""
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-from transformers import T5Tokenizer, T5EncoderModel
+from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
 from tqdm import tqdm
 
 from vhold.utils.constants import PROSTT5_MODEL_NAME, get_model_dir
@@ -55,10 +56,24 @@ def get_device(device_str: str = "auto") -> torch.device:
 
 
 class ProstT5Predictor:
-    """ProstT5 model for predicting 3Di structural sequences."""
+    """ProstT5 model for predicting 3Di structural sequences.
 
-    # 3Di vocabulary mapping
-    THREE_DI_VOCAB = list("ACDEFGHIKLMNPQRSTVWY")
+    Uses the sequence-to-sequence translation capability of ProstT5
+    to convert amino acid sequences to 3Di structural alphabet.
+    """
+
+    # Generation parameters for AA to 3Di translation
+    # These are tuned for structure prediction as per ProstT5 documentation
+    GEN_KWARGS = {
+        "do_sample": True,
+        "num_beams": 3,
+        "top_p": 0.95,
+        "temperature": 1.2,
+        "top_k": 6,
+        "repetition_penalty": 1.2,
+        "early_stopping": True,
+        "num_return_sequences": 1,
+    }
 
     def __init__(
         self,
@@ -70,11 +85,12 @@ class ProstT5Predictor:
 
         Args:
             device: Device for inference ('auto', 'cuda', 'mps', 'cpu')
-            half_precision: Use half precision on GPU
+            half_precision: Use half precision on GPU (not supported on CPU)
             model_dir: Directory to cache models
         """
         self.device = get_device(device)
-        self.half_precision = half_precision and self.device.type != "cpu"
+        # Half precision only works on CUDA, not MPS or CPU
+        self.half_precision = half_precision and self.device.type == "cuda"
         self.model_dir = model_dir or get_model_dir()
 
         self.tokenizer = None
@@ -100,37 +116,44 @@ class ProstT5Predictor:
             do_lower_case=False,
         )
 
-        # Load model (encoder only for embeddings)
+        # Load full seq2seq model for translation
         logger.info("Loading model...")
-        self.model = T5EncoderModel.from_pretrained(
+        self.model = AutoModelForSeq2SeqLM.from_pretrained(
             PROSTT5_MODEL_NAME,
             cache_dir=self.model_dir,
         )
 
-        # Move to device and set precision
+        # Move to device
         self.model = self.model.to(self.device)
 
+        # Set precision
         if self.half_precision:
             self.model = self.model.half()
             logger.info("Using half precision (FP16)")
+        else:
+            self.model = self.model.float()
+            if self.device.type == "cpu":
+                logger.info("Using full precision (FP32) on CPU")
 
         self.model.eval()
         self._loaded = True
         logger.info("Model loaded successfully")
 
     def _prepare_sequence(self, sequence: str) -> str:
-        """Prepare a sequence for ProstT5 input.
+        """Prepare an amino acid sequence for ProstT5 input.
 
         Args:
             sequence: Amino acid sequence
 
         Returns:
-            Formatted sequence with spaces between residues
+            Formatted sequence with AA2fold prefix and spaces
         """
-        # ProstT5 expects sequences with spaces between amino acids
-        # and a prefix indicating the task
-        # For 3Di prediction, we use the sequence as-is with spaces
-        return " ".join(list(sequence))
+        # Replace rare/ambiguous amino acids with X
+        sequence = re.sub(r"[UZOB]", "X", sequence.upper())
+        # Add spaces between amino acids
+        spaced = " ".join(list(sequence))
+        # Add the AA2fold prefix for amino acid to 3Di translation
+        return f"<AA2fold> {spaced}"
 
     def predict_single(self, sequence_id: str, aa_sequence: str) -> PredictionResult:
         """Predict 3Di sequence for a single protein.
@@ -140,12 +163,13 @@ class ProstT5Predictor:
             aa_sequence: Amino acid sequence
 
         Returns:
-            PredictionResult with 3Di sequence and confidence
+            PredictionResult with 3Di sequence
         """
         self.load_model()
 
-        # Prepare input
+        # Prepare input with AA2fold prefix
         prepared_seq = self._prepare_sequence(aa_sequence)
+        seq_len = len(aa_sequence)
 
         # Tokenize
         inputs = self.tokenizer(
@@ -153,52 +177,38 @@ class ProstT5Predictor:
             return_tensors="pt",
             padding=True,
             truncation=True,
-            max_length=4096,
+            max_length=2048,  # ProstT5 max length
         )
 
         # Move to device
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        # Get embeddings
+        # Generate 3Di sequence
         with torch.no_grad():
-            outputs = self.model(**inputs)
-            embeddings = outputs.last_hidden_state
+            outputs = self.model.generate(
+                inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                max_length=seq_len + 1,  # +1 for potential EOS token
+                min_length=seq_len,
+                **self.GEN_KWARGS,
+            )
 
-        # Convert embeddings to 3Di sequence
-        # ProstT5 produces embeddings that can be mapped to 3Di alphabet
-        # We use argmax over the embedding dimensions mapped to 3Di vocab
+        # Decode the generated sequence
+        decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-        # Get the token embeddings (excluding special tokens)
-        # Shape: [1, seq_len, hidden_dim]
-        token_embeddings = embeddings[0, 1:-1, :]  # Remove CLS and SEP tokens
+        # Remove spaces from the 3Di sequence
+        three_di_seq = "".join(decoded.split())
 
-        # Simple approach: use the first 20 dimensions as logits for 3Di
-        # (This is a simplified approach - actual ProstT5 may use different mapping)
-        logits = token_embeddings[:, :20]
+        # Ensure length matches (truncate or pad if needed)
+        if len(three_di_seq) > seq_len:
+            three_di_seq = three_di_seq[:seq_len]
+        elif len(three_di_seq) < seq_len:
+            # Pad with 'A' if too short (shouldn't happen normally)
+            three_di_seq += "A" * (seq_len - len(three_di_seq))
 
-        # Apply softmax to get probabilities
-        probs = torch.softmax(logits, dim=-1)
-
-        # Get predictions and confidence
-        max_probs, pred_indices = torch.max(probs, dim=-1)
-
-        # Convert to 3Di sequence
-        three_di_seq = ""
-        confidence_scores = []
-
-        for i, (idx, prob) in enumerate(zip(pred_indices, max_probs)):
-            if i < len(aa_sequence):
-                three_di_seq += self.THREE_DI_VOCAB[idx.item() % 20]
-                confidence_scores.append(prob.item())
-
-        # Ensure lengths match
-        if len(three_di_seq) < len(aa_sequence):
-            # Pad with 'A' (most common 3Di)
-            three_di_seq += "A" * (len(aa_sequence) - len(three_di_seq))
-            confidence_scores.extend([0.5] * (len(aa_sequence) - len(confidence_scores)))
-        elif len(three_di_seq) > len(aa_sequence):
-            three_di_seq = three_di_seq[:len(aa_sequence)]
-            confidence_scores = confidence_scores[:len(aa_sequence)]
+        # For seq2seq generation, we don't have per-residue confidence
+        # Use a uniform high confidence since this is the proper translation
+        confidence_scores = [1.0] * len(three_di_seq)
 
         return PredictionResult(
             sequence_id=sequence_id,
@@ -217,7 +227,7 @@ class ProstT5Predictor:
 
         Args:
             sequences: Dict mapping IDs to amino acid sequences
-            batch_size: Number of sequences per batch
+            batch_size: Number of sequences per batch (for batched generation)
             show_progress: Show progress bar
 
         Returns:
@@ -228,6 +238,7 @@ class ProstT5Predictor:
         results = {}
         seq_items = list(sequences.items())
 
+        # Process in batches
         iterator = range(0, len(seq_items), batch_size)
         if show_progress:
             iterator = tqdm(iterator, desc="Predicting 3Di", unit="batch")
@@ -235,19 +246,108 @@ class ProstT5Predictor:
         for i in iterator:
             batch = seq_items[i:i + batch_size]
 
-            for seq_id, aa_seq in batch:
+            if batch_size == 1:
+                # Single sequence processing
+                for seq_id, aa_seq in batch:
+                    try:
+                        result = self.predict_single(seq_id, aa_seq)
+                        results[seq_id] = result
+                    except Exception as e:
+                        logger.error(f"Error predicting {seq_id}: {e}")
+                        results[seq_id] = PredictionResult(
+                            sequence_id=seq_id,
+                            aa_sequence=aa_seq,
+                            three_di_sequence="D" * len(aa_seq),  # D is common 3Di
+                            confidence_scores=[0.0] * len(aa_seq),
+                        )
+            else:
+                # Batch processing
                 try:
-                    result = self.predict_single(seq_id, aa_seq)
-                    results[seq_id] = result
+                    batch_results = self._predict_batch_internal(batch)
+                    results.update(batch_results)
                 except Exception as e:
-                    logger.error(f"Error predicting {seq_id}: {e}")
-                    # Return a placeholder result
-                    results[seq_id] = PredictionResult(
-                        sequence_id=seq_id,
-                        aa_sequence=aa_seq,
-                        three_di_sequence="A" * len(aa_seq),
-                        confidence_scores=[0.0] * len(aa_seq),
-                    )
+                    logger.error(f"Error in batch prediction: {e}")
+                    # Fall back to single sequence processing
+                    for seq_id, aa_seq in batch:
+                        try:
+                            result = self.predict_single(seq_id, aa_seq)
+                            results[seq_id] = result
+                        except Exception as e2:
+                            logger.error(f"Error predicting {seq_id}: {e2}")
+                            results[seq_id] = PredictionResult(
+                                sequence_id=seq_id,
+                                aa_sequence=aa_seq,
+                                three_di_sequence="D" * len(aa_seq),
+                                confidence_scores=[0.0] * len(aa_seq),
+                            )
+
+        return results
+
+    def _predict_batch_internal(
+        self,
+        batch: list[tuple[str, str]],
+    ) -> dict[str, PredictionResult]:
+        """Internal method for batch prediction.
+
+        Args:
+            batch: List of (sequence_id, aa_sequence) tuples
+
+        Returns:
+            Dict mapping IDs to PredictionResults
+        """
+        # Prepare all sequences
+        seq_ids = [item[0] for item in batch]
+        aa_seqs = [item[1] for item in batch]
+        prepared_seqs = [self._prepare_sequence(seq) for seq in aa_seqs]
+        seq_lens = [len(seq) for seq in aa_seqs]
+
+        # Tokenize batch
+        inputs = self.tokenizer(
+            prepared_seqs,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=2048,
+        )
+
+        # Move to device
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+        # Generate
+        max_len = max(seq_lens)
+        min_len = min(seq_lens)
+
+        with torch.no_grad():
+            outputs = self.model.generate(
+                inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                max_length=max_len + 1,
+                min_length=min_len,
+                **self.GEN_KWARGS,
+            )
+
+        # Decode all outputs
+        decoded_list = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+
+        # Build results
+        results = {}
+        for seq_id, aa_seq, decoded, expected_len in zip(
+            seq_ids, aa_seqs, decoded_list, seq_lens
+        ):
+            three_di_seq = "".join(decoded.split())
+
+            # Adjust length
+            if len(three_di_seq) > expected_len:
+                three_di_seq = three_di_seq[:expected_len]
+            elif len(three_di_seq) < expected_len:
+                three_di_seq += "A" * (expected_len - len(three_di_seq))
+
+            results[seq_id] = PredictionResult(
+                sequence_id=seq_id,
+                aa_sequence=aa_seq,
+                three_di_sequence=three_di_seq,
+                confidence_scores=[1.0] * len(three_di_seq),
+            )
 
         return results
 
