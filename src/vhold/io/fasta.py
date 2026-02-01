@@ -109,29 +109,46 @@ def iterate_fasta(path: str | Path) -> Iterator[ProteinRecord]:
 
 
 def write_fasta(
-    records: dict[str, ProteinRecord] | list[ProteinRecord],
+    records: dict[str, ProteinRecord] | dict[str, str] | list[ProteinRecord],
     path: str | Path,
 ) -> None:
     """Write protein sequences to a FASTA file.
 
     Args:
-        records: Dict or list of ProteinRecord objects
+        records: Dict or list of ProteinRecord objects, or dict mapping id -> sequence
         path: Output path
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    if isinstance(records, dict):
-        records = list(records.values())
-
     bio_records = []
-    for rec in records:
-        bio_rec = SeqRecord(
-            Seq(rec.sequence),
-            id=rec.id,
-            description=rec.description if rec.description != rec.id else "",
-        )
-        bio_records.append(bio_rec)
+
+    if isinstance(records, dict):
+        for key, value in records.items():
+            if isinstance(value, ProteinRecord):
+                rec = value
+                bio_rec = SeqRecord(
+                    Seq(rec.sequence),
+                    id=rec.id,
+                    description=rec.description if rec.description != rec.id else "",
+                )
+            else:
+                # value is a string (sequence)
+                bio_rec = SeqRecord(
+                    Seq(value),
+                    id=key,
+                    description="",
+                )
+            bio_records.append(bio_rec)
+    else:
+        # list of ProteinRecord
+        for rec in records:
+            bio_rec = SeqRecord(
+                Seq(rec.sequence),
+                id=rec.id,
+                description=rec.description if rec.description != rec.id else "",
+            )
+            bio_records.append(bio_rec)
 
     SeqIO.write(bio_records, path, "fasta")
     logger.info(f"Wrote {len(bio_records)} sequences to {path}")

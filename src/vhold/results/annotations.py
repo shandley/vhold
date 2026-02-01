@@ -80,7 +80,6 @@ class AnnotatedProtein:
             "identity": self.identity if self.identity is not None else "",
             "coverage": self.coverage if self.coverage is not None else "",
             "bits": self.best_hit.bits if self.best_hit else "",
-            "prob": self.best_hit.prob if self.best_hit else "",
             "num_hits": len(self.all_hits),
         }
 

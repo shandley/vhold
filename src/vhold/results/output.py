@@ -25,7 +25,6 @@ TSV_COLUMNS = [
     "identity",
     "coverage",
     "bits",
-    "prob",
     "organism",
     "gene",
     "uniprot_id",

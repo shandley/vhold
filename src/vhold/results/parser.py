@@ -29,24 +29,19 @@ class FoldseekHit:
     bits: float
     qlen: int
     tlen: int
-    qaln: str
-    taln: str
-    prob: float
+    qcov: float
+    tcov: float
     source_db: str = ""
 
     @property
     def coverage(self) -> float:
-        """Calculate query coverage."""
-        if self.qlen == 0:
-            return 0.0
-        return self.alnlen / self.qlen
+        """Get query coverage."""
+        return self.qcov
 
     @property
     def target_coverage(self) -> float:
-        """Calculate target coverage."""
-        if self.tlen == 0:
-            return 0.0
-        return self.alnlen / self.tlen
+        """Get target coverage."""
+        return self.tcov
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -65,9 +60,8 @@ class FoldseekHit:
             "bits": self.bits,
             "qlen": self.qlen,
             "tlen": self.tlen,
-            "qaln": self.qaln,
-            "taln": self.taln,
-            "prob": self.prob,
+            "qcov": self.qcov,
+            "tcov": self.tcov,
             "source_db": self.source_db,
             "coverage": self.coverage,
             "target_coverage": self.target_coverage,
@@ -121,9 +115,8 @@ def parse_foldseek_results(
             bits=float(row["bits"]),
             qlen=int(row["qlen"]),
             tlen=int(row["tlen"]),
-            qaln=str(row["qaln"]) if pd.notna(row["qaln"]) else "",
-            taln=str(row["taln"]) if pd.notna(row["taln"]) else "",
-            prob=float(row["prob"]) if pd.notna(row["prob"]) else 0.0,
+            qcov=float(row["qcov"]),
+            tcov=float(row["tcov"]),
             source_db=source_db,
         )
         hits.append(hit)
@@ -165,9 +158,8 @@ def parse_dataframe_results(
             bits=float(row["bits"]),
             qlen=int(row["qlen"]),
             tlen=int(row["tlen"]),
-            qaln=str(row["qaln"]) if pd.notna(row.get("qaln")) else "",
-            taln=str(row["taln"]) if pd.notna(row.get("taln")) else "",
-            prob=float(row["prob"]) if pd.notna(row.get("prob")) else 0.0,
+            qcov=float(row["qcov"]),
+            tcov=float(row["tcov"]),
             source_db=db,
         )
         hits.append(hit)

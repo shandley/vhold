@@ -5,7 +5,7 @@ from pathlib import Path
 from vhold.features.prostt5 import ProstT5Predictor
 from vhold.features.confidence import apply_confidence_mask
 from vhold.features.foldseek import search_databases, merge_results
-from vhold.io.fasta import read_fasta, write_3di_fasta
+from vhold.io.fasta import read_fasta, write_fasta, write_3di_fasta
 from vhold.results.parser import parse_dataframe_results
 from vhold.results.annotations import transfer_annotations
 from vhold.results.output import generate_report
@@ -110,6 +110,10 @@ def run_pipeline(
         show_progress=True,
     )
 
+    # Save AA sequences for Foldseek
+    aa_fasta = predictions_dir / "aa_sequences.fasta"
+    write_fasta(seq_dict, aa_fasta)
+
     # Save 3Di sequences
     raw_3di = {seq_id: result.three_di_sequence for seq_id, result in results.items()}
     write_3di_fasta(raw_3di, predictions_dir / "3di_sequences.fasta")
@@ -120,8 +124,8 @@ def run_pipeline(
         masked = apply_confidence_mask(result, threshold=confidence_threshold)
         masked_3di[seq_id] = masked
 
-    query_fasta = predictions_dir / "3di_sequences_masked.fasta"
-    write_3di_fasta(masked_3di, query_fasta)
+    three_di_fasta = predictions_dir / "3di_sequences_masked.fasta"
+    write_3di_fasta(masked_3di, three_di_fasta)
 
     mean_conf = sum(r.mean_confidence for r in results.values()) / len(results)
     logger.info(f"Mean prediction confidence: {mean_conf:.4f}")
@@ -135,7 +139,8 @@ def run_pipeline(
     search_dir.mkdir(parents=True, exist_ok=True)
 
     search_results = search_databases(
-        query_fasta=query_fasta,
+        aa_fasta=aa_fasta,
+        three_di_fasta=three_di_fasta,
         output_dir=search_dir,
         databases=databases,
         db_dir=db_dir,

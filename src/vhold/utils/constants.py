@@ -62,7 +62,8 @@ VIRO3D_FILES = {
 PROSTT5_MODEL_NAME = "Rostlab/ProstT5"
 
 # Foldseek output format columns
-# query, target, fident, alnlen, mismatch, gapopen, qstart, qend, tstart, tend, evalue, bits
+# Note: prob, lddt, qtmscore, etc. require C-alpha coordinates which we don't have
+# when using pre-computed 3Di sequences from ProstT5
 FOLDSEEK_OUTPUT_COLUMNS = [
     "query",
     "target",
@@ -78,12 +79,11 @@ FOLDSEEK_OUTPUT_COLUMNS = [
     "bits",
     "qlen",
     "tlen",
-    "qaln",
-    "taln",
-    "prob",
+    "qcov",
+    "tcov",
 ]
 
-FOLDSEEK_OUTPUT_FORMAT = "query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,qlen,tlen,qaln,taln,prob"
+FOLDSEEK_OUTPUT_FORMAT = "query,target,fident,alnlen,mismatch,gapopen,qstart,qend,tstart,tend,evalue,bits,qlen,tlen,qcov,tcov"
 
 # 3Di alphabet
 THREE_DI_ALPHABET = "ACDEFGHIKLMNPQRSTVWY"
