@@ -4,6 +4,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
+from vhold.results.categories import classify_protein
 from vhold.results.parser import FoldseekHit
 from vhold.utils.logging import get_logger
 
@@ -56,6 +57,9 @@ class ConsensusResult:
     confidence_level: str = "none"
     agreement: str = "none"  # "agree", "partial", "disagree", "single", "none"
 
+    # Functional classification
+    functional_category: str = "unknown"
+
     # All hits by database
     hits_by_db: dict = field(default_factory=dict)
 
@@ -85,6 +89,7 @@ class ConsensusResult:
             "confidence_level": self.confidence_level,
             "consensus_score": round(self.consensus_score, 3),
             "agreement": self.agreement,
+            "functional_category": self.functional_category,
             "primary_source": self.primary_source,
             "primary_target": self.primary_hit.target if self.primary_hit else "",
             "primary_evalue": self.primary_hit.evalue if self.primary_hit else "",
@@ -263,6 +268,12 @@ def build_consensus(
     result.primary_hit = primary_scored.hit
     result.primary_annotation = primary_scored.annotation
     result.primary_source = primary_db
+
+    # Classify protein into functional category
+    result.functional_category = classify_protein(
+        result.description,
+        result.primary_annotation.get("gene"),
+    )
 
     # Check for secondary database
     if len(sorted_dbs) > 1:

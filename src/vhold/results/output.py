@@ -41,6 +41,7 @@ CONSENSUS_TSV_COLUMNS = [
     "confidence_level",
     "consensus_score",
     "agreement",
+    "functional_category",
     "primary_source",
     "primary_target",
     "primary_evalue",
@@ -287,6 +288,12 @@ def write_consensus_summary_json(
     for ann in annotations.values():
         agreement_dist[ann.agreement] = agreement_dist.get(ann.agreement, 0) + 1
 
+    # Functional category distribution
+    category_dist: dict[str, int] = {}
+    for ann in annotations.values():
+        cat = ann.functional_category
+        category_dist[cat] = category_dist.get(cat, 0) + 1
+
     # Primary source distribution
     source_dist = {}
     for ann in annotations.values():
@@ -334,6 +341,7 @@ def write_consensus_summary_json(
             "consensus_rate": with_consensus / annotated if annotated > 0 else 0,
             "confidence_distribution": confidence_dist,
             "agreement_distribution": agreement_dist,
+            "category_distribution": category_dist,
             "primary_source_distribution": source_dist,
             "consensus_score_stats": score_stats,
             "evalue_stats": evalue_stats,
