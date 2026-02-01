@@ -22,11 +22,12 @@ UNIPROT_FIELDS = [
     "length",
 ]
 
-# Batch size for UniProt API requests (max 500 per request)
-BATCH_SIZE = 100
+# Batch size for UniProt API requests
+# Keep small to avoid URL length limits with OR queries
+BATCH_SIZE = 25
 
 # Rate limiting: UniProt allows ~10 requests/second
-REQUEST_DELAY = 0.1
+REQUEST_DELAY = 0.15
 
 
 def fetch_uniprot_entry(accession: str) -> dict | None:
@@ -116,8 +117,9 @@ def _fetch_batch(accessions: list[str]) -> dict[str, dict]:
     try:
         response = requests.get(url, params=params, timeout=60)
         if response.status_code != 200:
-            logger.warning(f"UniProt batch API error: {response.status_code}")
-            return {}
+            logger.debug(f"UniProt batch API error: {response.status_code}, falling back to individual fetches")
+            # Fall back to individual fetches for this batch
+            return _fetch_individually(accessions)
 
         data = response.json()
         results = {}
@@ -131,7 +133,25 @@ def _fetch_batch(accessions: list[str]) -> dict[str, dict]:
 
     except requests.RequestException as e:
         logger.warning(f"UniProt batch API request failed: {e}")
-        return {}
+        return _fetch_individually(accessions)
+
+
+def _fetch_individually(accessions: list[str]) -> dict[str, dict]:
+    """Fetch accessions one by one as fallback.
+
+    Args:
+        accessions: List of accessions to fetch
+
+    Returns:
+        Dict mapping accession to protein info
+    """
+    results = {}
+    for acc in accessions:
+        result = fetch_uniprot_entry(acc)
+        if result:
+            results[acc] = result
+        time.sleep(REQUEST_DELAY)
+    return results
 
 
 def _parse_uniprot_entry(entry: dict) -> dict | None:
