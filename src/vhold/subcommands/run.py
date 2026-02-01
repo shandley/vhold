@@ -7,8 +7,8 @@ from vhold.features.confidence import apply_confidence_mask
 from vhold.features.foldseek import search_databases, merge_results
 from vhold.io.fasta import read_fasta, write_fasta, write_3di_fasta
 from vhold.results.parser import parse_dataframe_results
-from vhold.results.annotations import transfer_annotations
-from vhold.results.output import generate_report
+from vhold.results.annotations import transfer_annotations_consensus
+from vhold.results.output import generate_report_consensus
 from vhold.utils.logging import setup_logging, get_logger
 
 logger = get_logger(__name__)
@@ -159,15 +159,15 @@ def run_pipeline(
     logger.info("")
 
     # ========================================
-    # Step 4: Transfer annotations
+    # Step 4: Transfer annotations (with consensus)
     # ========================================
-    logger.info("Step 4: Transferring annotations...")
+    logger.info("Step 4: Transferring annotations with multi-database consensus...")
 
     # Parse hits
     hits = parse_dataframe_results(merged_results)
 
-    # Transfer annotations
-    annotations = transfer_annotations(
+    # Transfer annotations using consensus scoring
+    annotations = transfer_annotations_consensus(
         hits=hits,
         query_lengths=seq_lengths,
         db_dir=db_dir,
@@ -175,7 +175,9 @@ def run_pipeline(
 
     # Count results
     annotated = sum(1 for a in annotations.values() if a.is_annotated)
+    with_consensus = sum(1 for a in annotations.values() if a.has_consensus)
     logger.info(f"Annotated: {annotated}/{len(annotations)} proteins")
+    logger.info(f"Multi-database agreement: {with_consensus}/{annotated} proteins")
     logger.info("")
 
     # ========================================
@@ -189,7 +191,7 @@ def run_pipeline(
     if databases in ("all", "viro3d"):
         databases_searched.append("viro3d")
 
-    output_files = generate_report(
+    output_files = generate_report_consensus(
         annotations=annotations,
         output_dir=output_path,
         prefix=prefix,
@@ -210,7 +212,9 @@ def run_pipeline(
 
     # Print summary statistics
     annotation_rate = annotated / len(annotations) * 100 if annotations else 0
+    consensus_rate = with_consensus / annotated * 100 if annotated else 0
     logger.info("Summary:")
     logger.info(f"  Total proteins: {len(annotations)}")
     logger.info(f"  Annotated: {annotated} ({annotation_rate:.1f}%)")
+    logger.info(f"  Multi-DB consensus: {with_consensus} ({consensus_rate:.1f}% of annotated)")
     logger.info(f"  Unannotated: {len(annotations) - annotated}")

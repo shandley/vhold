@@ -240,3 +240,88 @@ def transfer_annotations(
     )
 
     return results
+
+
+def transfer_annotations_consensus(
+    hits: list[FoldseekHit],
+    query_lengths: dict[str, int],
+    db_dir: Path | None = None,
+):
+    """Transfer annotations using multi-database consensus scoring.
+
+    This function considers hits from all databases and builds a consensus
+    annotation that weighs hit quality and database agreement.
+
+    Args:
+        hits: List of Foldseek hits from all databases
+        query_lengths: Dict mapping query IDs to lengths
+        db_dir: Database directory
+
+    Returns:
+        Dict mapping query IDs to ConsensusResult objects
+    """
+    from vhold.results.consensus import calculate_consensus
+
+    # Group hits by query
+    hits_by_query: dict[str, list[FoldseekHit]] = {}
+    for hit in hits:
+        if hit.query not in hits_by_query:
+            hits_by_query[hit.query] = []
+        hits_by_query[hit.query].append(hit)
+
+    # Load metadata
+    bfvd_metadata = None
+    viro3d_metadata = None
+    viro3d_annotations = None
+
+    try:
+        bfvd_metadata = load_bfvd_metadata(db_dir)
+    except FileNotFoundError:
+        logger.warning("BFVD metadata not found")
+        bfvd_metadata = pd.DataFrame()
+
+    try:
+        viro3d_metadata = load_viro3d_metadata(db_dir)
+    except FileNotFoundError:
+        logger.warning("Viro3D metadata not found")
+        viro3d_metadata = pd.DataFrame()
+
+    try:
+        viro3d_annotations = load_viro3d_annotations(db_dir)
+    except FileNotFoundError:
+        viro3d_annotations = pd.DataFrame()
+
+    # Get annotations for all hits
+    annotations_by_hit: dict[tuple[str, str], dict] = {}
+
+    for query_hits in hits_by_query.values():
+        for hit in query_hits:
+            key = (hit.target, hit.source_db)
+            if key in annotations_by_hit:
+                continue
+
+            annotation = {}
+            if hit.source_db == "bfvd" and len(bfvd_metadata) > 0:
+                ann = get_bfvd_annotation(hit.target, bfvd_metadata)
+                if ann:
+                    annotation = ann
+
+            elif hit.source_db == "viro3d" and len(viro3d_metadata) > 0:
+                ann = get_viro3d_annotation(
+                    hit.target,
+                    viro3d_metadata,
+                    viro3d_annotations if len(viro3d_annotations) > 0 else None,
+                )
+                if ann:
+                    annotation = ann
+
+            annotations_by_hit[key] = annotation
+
+    # Calculate consensus
+    results = calculate_consensus(
+        hits_by_query=hits_by_query,
+        annotations_by_hit=annotations_by_hit,
+        query_lengths=query_lengths,
+    )
+
+    return results
