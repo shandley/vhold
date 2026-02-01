@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
 from tqdm import tqdm
 
@@ -155,6 +156,48 @@ class ProstT5Predictor:
         # Add the AA2fold prefix for amino acid to 3Di translation
         return f"<AA2fold> {spaced}"
 
+    def _calculate_confidence_scores(
+        self,
+        scores: tuple[torch.Tensor, ...],
+        expected_len: int,
+    ) -> list[float]:
+        """Calculate per-residue confidence scores from generation logits.
+
+        The confidence is calculated as the softmax probability of the
+        selected token at each position. Higher probability means the
+        model is more confident in that prediction.
+
+        Args:
+            scores: Tuple of score tensors from model.generate(), one per position
+            expected_len: Expected sequence length
+
+        Returns:
+            List of confidence scores (0-1) for each residue
+        """
+        if not scores:
+            return [1.0] * expected_len
+
+        confidence_scores = []
+
+        for score_tensor in scores:
+            # score_tensor shape: (batch_size, vocab_size)
+            # Apply softmax to get probabilities
+            probs = F.softmax(score_tensor[0], dim=-1)
+            # Get the maximum probability (confidence in the chosen token)
+            max_prob = probs.max().item()
+            confidence_scores.append(max_prob)
+
+        # Adjust length if needed (3Di tokens may differ from AA count due to spaces)
+        # The model generates one score per output token
+        if len(confidence_scores) > expected_len:
+            confidence_scores = confidence_scores[:expected_len]
+        elif len(confidence_scores) < expected_len:
+            # Pad with mean confidence if too short
+            mean_conf = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 1.0
+            confidence_scores.extend([mean_conf] * (expected_len - len(confidence_scores)))
+
+        return confidence_scores
+
     def predict_single(self, sequence_id: str, aa_sequence: str) -> PredictionResult:
         """Predict 3Di sequence for a single protein.
 
@@ -183,18 +226,20 @@ class ProstT5Predictor:
         # Move to device
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        # Generate 3Di sequence
+        # Generate 3Di sequence with scores for confidence calculation
         with torch.no_grad():
             outputs = self.model.generate(
                 inputs["input_ids"],
                 attention_mask=inputs["attention_mask"],
                 max_length=seq_len + 1,  # +1 for potential EOS token
                 min_length=seq_len,
+                return_dict_in_generate=True,
+                output_scores=True,
                 **self.GEN_KWARGS,
             )
 
         # Decode the generated sequence
-        decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        decoded = self.tokenizer.decode(outputs.sequences[0], skip_special_tokens=True)
 
         # Remove spaces from the 3Di sequence
         three_di_seq = "".join(decoded.split())
@@ -206,9 +251,10 @@ class ProstT5Predictor:
             # Pad with 'A' if too short (shouldn't happen normally)
             three_di_seq += "A" * (seq_len - len(three_di_seq))
 
-        # For seq2seq generation, we don't have per-residue confidence
-        # Use a uniform high confidence since this is the proper translation
-        confidence_scores = [1.0] * len(three_di_seq)
+        # Calculate per-residue confidence from generation scores
+        confidence_scores = self._calculate_confidence_scores(
+            outputs.scores, seq_len
+        )
 
         return PredictionResult(
             sequence_id=sequence_id,
@@ -313,7 +359,7 @@ class ProstT5Predictor:
         # Move to device
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-        # Generate
+        # Generate with scores for confidence calculation
         max_len = max(seq_lens)
         min_len = min(seq_lens)
 
@@ -323,17 +369,27 @@ class ProstT5Predictor:
                 attention_mask=inputs["attention_mask"],
                 max_length=max_len + 1,
                 min_length=min_len,
+                return_dict_in_generate=True,
+                output_scores=True,
                 **self.GEN_KWARGS,
             )
 
         # Decode all outputs
-        decoded_list = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+        decoded_list = self.tokenizer.batch_decode(
+            outputs.sequences, skip_special_tokens=True
+        )
+
+        # Calculate per-batch-item confidence scores
+        # For batched generation, scores are shape (num_positions, batch_size, vocab_size)
+        batch_confidences = self._calculate_batch_confidence_scores(
+            outputs.scores, len(batch), seq_lens
+        )
 
         # Build results
         results = {}
-        for seq_id, aa_seq, decoded, expected_len in zip(
+        for idx, (seq_id, aa_seq, decoded, expected_len) in enumerate(zip(
             seq_ids, aa_seqs, decoded_list, seq_lens
-        ):
+        )):
             three_di_seq = "".join(decoded.split())
 
             # Adjust length
@@ -346,10 +402,54 @@ class ProstT5Predictor:
                 sequence_id=seq_id,
                 aa_sequence=aa_seq,
                 three_di_sequence=three_di_seq,
-                confidence_scores=[1.0] * len(three_di_seq),
+                confidence_scores=batch_confidences[idx],
             )
 
         return results
+
+    def _calculate_batch_confidence_scores(
+        self,
+        scores: tuple[torch.Tensor, ...],
+        batch_size: int,
+        seq_lens: list[int],
+    ) -> list[list[float]]:
+        """Calculate per-residue confidence for a batch of sequences.
+
+        Args:
+            scores: Tuple of score tensors, one per generated position
+            batch_size: Number of sequences in the batch
+            seq_lens: List of expected sequence lengths
+
+        Returns:
+            List of confidence score lists, one per sequence in batch
+        """
+        if not scores:
+            return [[1.0] * length for length in seq_lens]
+
+        # Initialize confidence lists for each sequence
+        batch_confidences: list[list[float]] = [[] for _ in range(batch_size)]
+
+        for score_tensor in scores:
+            # score_tensor shape: (batch_size, vocab_size)
+            probs = F.softmax(score_tensor, dim=-1)
+            # Get max probability for each item in batch
+            max_probs = probs.max(dim=-1).values
+
+            for batch_idx in range(batch_size):
+                batch_confidences[batch_idx].append(max_probs[batch_idx].item())
+
+        # Adjust lengths for each sequence
+        for idx, expected_len in enumerate(seq_lens):
+            conf = batch_confidences[idx]
+            if len(conf) > expected_len:
+                batch_confidences[idx] = conf[:expected_len]
+            elif len(conf) < expected_len:
+                mean_conf = sum(conf) / len(conf) if conf else 1.0
+                batch_confidences[idx].extend(
+                    [mean_conf] * (expected_len - len(conf))
+                )
+
+        return batch_confidences
 
 
 def predict_3di(

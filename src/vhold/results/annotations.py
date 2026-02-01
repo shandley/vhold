@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from vhold.databases.bfvd import load_bfvd_metadata, get_bfvd_annotation
+from vhold.databases.uniprot import UniProtAnnotationCache
 from vhold.databases.viro3d import (
     load_viro3d_metadata,
     load_viro3d_annotations,
@@ -144,6 +145,7 @@ def transfer_annotations(
     hits: list[FoldseekHit],
     query_lengths: dict[str, int],
     db_dir: Path | None = None,
+    fetch_uniprot: bool = True,
 ) -> dict[str, AnnotatedProtein]:
     """Transfer annotations from database hits to query proteins.
 
@@ -151,6 +153,8 @@ def transfer_annotations(
         hits: List of Foldseek hits
         query_lengths: Dict mapping query IDs to lengths
         db_dir: Database directory
+        fetch_uniprot: Whether to fetch functional annotations from UniProt
+            for BFVD hits (default: True)
 
     Returns:
         Dict mapping query IDs to AnnotatedProtein objects
@@ -166,6 +170,16 @@ def transfer_annotations(
     bfvd_metadata = None
     viro3d_metadata = None
     viro3d_annotations = None
+
+    # Collect BFVD UniProt IDs for batch prefetching
+    uniprot_cache = None
+    if fetch_uniprot:
+        bfvd_uniprot_ids = [
+            hit.target for hit in hits if hit.source_db == "bfvd"
+        ]
+        if bfvd_uniprot_ids:
+            uniprot_cache = UniProtAnnotationCache()
+            uniprot_cache.prefetch(bfvd_uniprot_ids)
 
     # Transfer annotations
     results = {}
@@ -194,7 +208,11 @@ def transfer_annotations(
                     bfvd_metadata = pd.DataFrame()
 
             if len(bfvd_metadata) > 0:
-                ann = get_bfvd_annotation(best_hit.target, bfvd_metadata)
+                ann = get_bfvd_annotation(
+                    best_hit.target,
+                    bfvd_metadata,
+                    uniprot_cache=uniprot_cache,
+                )
                 if ann:
                     annotation = ann
 
@@ -246,6 +264,7 @@ def transfer_annotations_consensus(
     hits: list[FoldseekHit],
     query_lengths: dict[str, int],
     db_dir: Path | None = None,
+    fetch_uniprot: bool = True,
 ):
     """Transfer annotations using multi-database consensus scoring.
 
@@ -256,6 +275,8 @@ def transfer_annotations_consensus(
         hits: List of Foldseek hits from all databases
         query_lengths: Dict mapping query IDs to lengths
         db_dir: Database directory
+        fetch_uniprot: Whether to fetch functional annotations from UniProt
+            for BFVD hits (default: True)
 
     Returns:
         Dict mapping query IDs to ConsensusResult objects
@@ -291,6 +312,20 @@ def transfer_annotations_consensus(
     except FileNotFoundError:
         viro3d_annotations = pd.DataFrame()
 
+    # Collect BFVD UniProt IDs for batch prefetching
+    uniprot_cache = None
+    if fetch_uniprot:
+        bfvd_uniprot_ids = []
+        for query_hits in hits_by_query.values():
+            for hit in query_hits:
+                if hit.source_db == "bfvd":
+                    # BFVD target IDs are UniProt accessions
+                    bfvd_uniprot_ids.append(hit.target)
+
+        if bfvd_uniprot_ids:
+            uniprot_cache = UniProtAnnotationCache()
+            uniprot_cache.prefetch(bfvd_uniprot_ids)
+
     # Get annotations for all hits
     annotations_by_hit: dict[tuple[str, str], dict] = {}
 
@@ -302,7 +337,11 @@ def transfer_annotations_consensus(
 
             annotation = {}
             if hit.source_db == "bfvd" and len(bfvd_metadata) > 0:
-                ann = get_bfvd_annotation(hit.target, bfvd_metadata)
+                ann = get_bfvd_annotation(
+                    hit.target,
+                    bfvd_metadata,
+                    uniprot_cache=uniprot_cache,
+                )
                 if ann:
                     annotation = ann
 

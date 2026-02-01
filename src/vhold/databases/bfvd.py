@@ -1,11 +1,15 @@
 """BFVD database handling for vhold."""
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from vhold.utils.constants import get_db_dir
 from vhold.utils.logging import get_logger
+
+if TYPE_CHECKING:
+    from vhold.databases.uniprot import UniProtAnnotationCache
 
 logger = get_logger(__name__)
 
@@ -87,16 +91,18 @@ def load_bfvd_taxonomy(db_dir: Path | None = None) -> pd.DataFrame:
 def get_bfvd_annotation(
     target_id: str,
     metadata_df: pd.DataFrame,
+    uniprot_cache: "UniProtAnnotationCache | None" = None,
 ) -> dict | None:
     """Get annotation for a BFVD target.
 
     BFVD target IDs are UniProt accessions (e.g., D3TVS4).
-    The metadata contains structural quality metrics but not functional
-    descriptions. For full annotations, UniProt API would be needed.
+    The metadata contains structural quality metrics. Functional descriptions
+    are fetched from UniProt if a cache is provided.
 
     Args:
         target_id: Target protein ID from Foldseek hit (UniProt accession)
         metadata_df: BFVD metadata DataFrame
+        uniprot_cache: Optional UniProt annotation cache for functional descriptions
 
     Returns:
         Dict with annotation info or None if not found
@@ -114,19 +120,42 @@ def get_bfvd_annotation(
         return None
 
     row = matches.iloc[0]
+    uniprot_id = row["uniprot_id"]
 
-    # Build annotation dict
-    # Note: BFVD metadata doesn't contain protein descriptions
-    # Use UniProt ID as the primary identifier
+    # Build base annotation dict from BFVD metadata
     annotation = {
         "target_id": target_id,
         "source": "bfvd",
-        "uniprot_id": row["uniprot_id"],
+        "uniprot_id": uniprot_id,
         "structure_id": row["structure_id"],
         "plddt": float(row["plddt"]),
         "ptm": float(row["ptm"]),
-        # Description uses UniProt ID since BFVD lacks functional annotation
-        "description": f"UniProt:{row['uniprot_id']} (BFVD structural homolog)",
+        # Default description if UniProt fetch fails
+        "description": f"UniProt:{uniprot_id}",
     }
 
+    # Try to get functional annotation from UniProt
+    if uniprot_cache is not None:
+        uniprot_data = uniprot_cache.get(uniprot_id)
+        if uniprot_data:
+            # Use UniProt description if available
+            if uniprot_data.get("description"):
+                annotation["description"] = uniprot_data["description"]
+            if uniprot_data.get("gene"):
+                annotation["gene"] = uniprot_data["gene"]
+            if uniprot_data.get("organism"):
+                annotation["organism"] = uniprot_data["organism"]
+
     return annotation
+
+
+def get_bfvd_uniprot_ids(metadata_df: pd.DataFrame) -> list[str]:
+    """Extract all UniProt IDs from BFVD metadata.
+
+    Args:
+        metadata_df: BFVD metadata DataFrame
+
+    Returns:
+        List of unique UniProt accessions
+    """
+    return metadata_df["uniprot_id"].dropna().unique().tolist()

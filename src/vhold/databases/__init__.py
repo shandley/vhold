@@ -2,6 +2,7 @@
 
 from vhold.databases.install import install_databases, check_databases
 from vhold.databases.bfvd import load_bfvd_metadata
+from vhold.databases.uniprot import UniProtAnnotationCache, fetch_uniprot_batch
 from vhold.databases.viro3d import load_viro3d_metadata
 
 __all__ = [
@@ -9,4 +10,6 @@ __all__ = [
     "check_databases",
     "load_bfvd_metadata",
     "load_viro3d_metadata",
+    "UniProtAnnotationCache",
+    "fetch_uniprot_batch",
 ]
