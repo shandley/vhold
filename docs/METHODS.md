@@ -1,0 +1,319 @@
+# vHold: Methods and Algorithms
+
+## Overview
+
+vHold (Viral Homology-based Annotation Tool) is a computational pipeline for functional annotation of viral proteins using structural homology. The method leverages the observation that protein tertiary structure is 3-10 times more conserved than primary sequence during evolution, enabling detection of remote homology relationships that sequence-based methods miss.
+
+## Biological Rationale
+
+### The Challenge of Viral Protein Annotation
+
+Viral proteins present unique challenges for functional annotation:
+
+1. **Rapid sequence evolution**: RNA viruses and many DNA viruses evolve at rates 10^4-10^6 times faster than their hosts, leading to extensive sequence divergence even among functionally related proteins.
+
+2. **Limited sequence similarity**: Many viral proteins share <20% sequence identity with characterized homologs, below the threshold for reliable BLAST-based annotation.
+
+3. **Viral "dark matter"**: 40-70% of viral proteins in metagenomic datasets lack any functional annotation using sequence-based methods.
+
+4. **Convergent evolution**: Some viral protein functions have evolved independently multiple times, creating functional analogs with no sequence similarity.
+
+### Structural Homology as a Solution
+
+Protein structure constrains sequence evolution more strongly than function alone. Key observations supporting structural homology approaches:
+
+- Proteins with <20% sequence identity often maintain the same fold and function
+- The 3Di structural alphabet captures local geometric features that are conserved across divergent sequences
+- Structure-based searches can detect homology at sequence identities as low as 10-15%
+
+## Pipeline Architecture
+
+```
+Input FASTA → ProstT5 Prediction → Confidence Masking → Foldseek Search →
+    → Multi-Database Consensus → Functional Classification → Dark Matter Analysis → Output
+```
+
+### Step 1: 3Di Structural Sequence Prediction
+
+**Model**: ProstT5 (Rostlab/ProstT5)
+
+ProstT5 is a protein language model based on the T5 architecture that translates amino acid sequences directly to 3Di structural alphabet sequences without requiring explicit structure prediction.
+
+**3Di Alphabet**: The 3Di alphabet encodes local structural geometry using 20 characters representing discrete structural states. Each 3Di character captures:
+- Backbone dihedral angles (φ, ψ)
+- Cα-Cα distances
+- Local secondary structure context
+
+**Input Preparation**:
+```
+Sequence: MVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSFPTTKTYFPHFDLSH
+Formatted: <AA2fold> M V L S P A D K T N V K A A W G K V G A H A G E ...
+```
+
+**Generation Parameters**:
+- Method: Sampled generation with nucleus sampling
+- Temperature: 1.2
+- Top-p (nucleus): 0.95
+- Top-k: 6
+- Beam candidates: 3
+- Repetition penalty: 1.2
+
+**Confidence Score Extraction**:
+Per-residue confidence scores are extracted from the generation logits:
+
+```
+confidence[i] = max(softmax(logits[i]))
+```
+
+where `logits[i]` is the model's output distribution over the 3Di alphabet at position `i`.
+
+**Mean confidence** typically ranges from 0.70-0.95 for well-folded globular proteins, with lower values indicating disordered regions or unusual structural features.
+
+### Step 2: Confidence-Based Masking
+
+Low-confidence 3Di positions are masked to improve search specificity:
+
+```
+3Di_masked[i] = 'X' if confidence[i] < threshold else 3Di[i]
+```
+
+Default threshold: 0.7
+
+Masked positions are treated as wildcards during Foldseek searches, preventing spurious matches at unreliable positions.
+
+### Step 3: Structural Homology Search
+
+**Search Tool**: Foldseek
+
+Foldseek searches are performed against two complementary databases:
+
+#### BFVD (Big Fantastic Virus Database)
+- **Size**: 351,242 viral protein structures
+- **Source**: AlphaFold2-predicted structures with quality metrics
+- **Coverage**: Primarily bacteriophages with some eukaryotic viruses
+- **Annotations**: UniProt accessions linked to functional descriptions
+
+#### Viro3D
+- **Size**: 85,162 high-confidence viral structures
+- **Source**: Curated subset of AlphaFold predictions
+- **Coverage**: 4,400+ virus species across all viral taxa
+- **Annotations**: Direct Pfam domains, ICTV taxonomy, gene/product names
+
+**Search Parameters**:
+- E-value threshold: 1e-3 (default)
+- Sensitivity: 9.5
+- Maximum hits per query: 1000
+- Mode: Exhaustive search (no prefiltering)
+
+**Output Metrics**:
+- E-value and bit score
+- Sequence identity in aligned region (fident)
+- Query and target coverage (qcov, tcov)
+- Alignment length
+
+### Step 4: Multi-Database Consensus Scoring
+
+The consensus scoring algorithm integrates results from multiple databases to improve annotation confidence.
+
+#### 4.1 Hit Quality Score
+
+For each Foldseek hit, a quality score is calculated:
+
+```
+quality = 0.5 × evalue_score + 0.3 × identity_score + 0.2 × coverage_score
+
+where:
+    evalue_score = min(1.0, -log₁₀(evalue) / 50)
+    identity_score = fident  (0-1)
+    coverage_score = qcov    (0-1)
+```
+
+E-value contributes most strongly (50%) as it best captures statistical significance of structural similarity.
+
+#### 4.2 Database Weighting
+
+Databases are weighted based on annotation quality:
+
+| Database | Weight | Rationale |
+|----------|--------|-----------|
+| Viro3D   | 1.2    | Curated functional annotations |
+| BFVD     | 1.0    | Broader coverage, UniProt-derived annotations |
+
+A functional annotation bonus (1.1×) is applied when the annotation contains a real functional description rather than just identifiers or "hypothetical protein".
+
+```
+weighted_score = quality × database_weight × functional_bonus
+```
+
+#### 4.3 Cross-Database Agreement
+
+When hits exist in multiple databases, annotation agreement is assessed:
+
+1. **Keyword Extraction**: Significant terms (>3 characters, excluding stop words like "protein", "viral", "hypothetical") are extracted from each description.
+
+2. **Jaccard Similarity**:
+```
+similarity = |terms₁ ∩ terms₂| / |terms₁ ∪ terms₂|
+```
+
+3. **Agreement Classification**:
+   - **Agree**: similarity ≥ 0.5 (consensus bonus: 1.3×)
+   - **Partial**: similarity ≥ 0.2 (consensus bonus: 1.15×)
+   - **Disagree**: similarity < 0.2 (no bonus)
+   - **Single**: only one database has hits
+
+#### 4.4 Final Consensus Score
+
+```
+consensus_score = primary_weighted_score × agreement_bonus
+```
+
+The consensus score is capped at 1.0.
+
+### Step 5: Confidence Level Assignment
+
+Confidence levels guide interpretation of annotation reliability:
+
+| Level | Consensus Score | Interpretation |
+|-------|----------------|----------------|
+| High | ≥ 0.8 | Strong structural evidence, reliable annotation |
+| Medium | 0.5-0.8 | Good structural match, annotation likely correct |
+| Low | 0.3-0.5 | Marginal structural similarity, use with caution |
+| Very Low | < 0.3 | Weak evidence, consider as potential dark matter |
+
+**Agreement upgrade**: Proteins with "agree" status in multi-database consensus are upgraded one confidence level (e.g., medium → high).
+
+### Step 6: Functional Category Classification
+
+Annotated proteins are classified into functional categories based on keyword matching in descriptions and gene names:
+
+| Category | Representative Keywords |
+|----------|------------------------|
+| Structural | capsid, coat, envelope, spike, matrix, tail, fiber, portal, head, nucleocapsid |
+| Replication | polymerase, replicase, helicase, primase, RdRp, reverse transcriptase |
+| Protease | protease, peptidase, maturase, 3CL, MPro |
+| Nuclease | nuclease, endonuclease, exonuclease, integrase, recombinase |
+| Packaging | terminase, packaging, scaffold |
+| Regulatory | transcription, repressor, activator, regulator |
+| Movement | movement, cell-to-cell, transport |
+| Lysis | lysin, holin, endolysin, spanin |
+| Unknown | hypothetical, uncharacterized, DUF |
+
+Classification uses first-match priority, checked in the order listed.
+
+### Step 7: Dark Matter Analysis
+
+Proteins lacking confident functional annotation are flagged as viral "dark matter" for targeted investigation.
+
+#### Dark Matter Categories
+
+1. **No Hits**: No structural homologs detected in any database
+   - Truly novel proteins or highly divergent sequences
+   - Priority targets for experimental characterization
+
+2. **Unknown Function**: Strong structural hits but uncharacterized function
+   - Conserved structure suggests important biological role
+   - Candidates for functional genomics studies
+
+3. **Weak Hits**: Only marginal structural homologs
+   - E-value > 1e-5 OR sequence identity < 30%
+   - Ambiguous homology relationships
+   - May represent rapidly evolving proteins
+
+#### Dark Matter Statistics
+
+The dark matter rate is calculated as:
+```
+dark_matter_rate = (no_hits + unknown_function + weak_hits) / total_proteins
+```
+
+Length distribution statistics help identify whether dark matter proteins have characteristic sizes.
+
+## Output Formats
+
+### Main Results Table (TSV)
+
+| Column | Description |
+|--------|-------------|
+| query_id | Input protein identifier |
+| query_length | Protein length (amino acids) |
+| description | Transferred functional annotation |
+| confidence_level | high/medium/low/very_low/none |
+| consensus_score | Combined quality score (0-1) |
+| agreement | agree/partial/disagree/single/none |
+| functional_category | Assigned functional class |
+| primary_source | Database providing primary annotation |
+| primary_target | Best hit identifier |
+| primary_evalue | E-value of primary hit |
+| primary_identity | Sequence identity of primary hit |
+| primary_coverage | Query coverage of primary hit |
+| secondary_source | Second database (if available) |
+| secondary_target | Second-best hit identifier |
+| organism | Source organism of primary hit |
+| gene | Gene name (if available) |
+| uniprot_id | UniProt accession |
+| bfvd_hits | Number of BFVD hits |
+| viro3d_hits | Number of Viro3D hits |
+
+### Summary Statistics (JSON)
+
+- Annotation rate and consensus rate
+- Confidence level distribution
+- Agreement distribution
+- Functional category distribution
+- Primary source distribution
+- E-value and consensus score statistics
+- Dark matter summary
+
+### Dark Matter Table (TSV)
+
+Separate file listing all dark matter proteins with category, reason, best hit statistics, and confidence metrics.
+
+## Implementation Notes
+
+### Computational Requirements
+
+- **ProstT5 Prediction**: GPU-accelerated (CUDA/MPS) or CPU
+  - GPU: ~1 second per protein
+  - CPU: ~30-60 seconds per protein
+
+- **Foldseek Search**: CPU-only
+  - ~0.1 seconds per protein against combined databases
+
+### Memory Requirements
+
+- ProstT5 model: ~3 GB GPU memory (FP16) or ~6 GB CPU memory (FP32)
+- Foldseek databases: ~1.1 GB combined (BFVD + Viro3D)
+
+### Scalability
+
+The pipeline is designed for:
+- Single genomes: Complete in minutes
+- Metagenomic datasets: 100,000+ proteins feasible with batch processing
+
+## Validation Approach
+
+### Benchmark Datasets
+
+Performance should be evaluated on:
+1. Well-characterized viral genomes with experimental annotations
+2. Recently characterized proteins not in training databases
+3. Synthetic tests with known structural homologs at varying sequence identities
+
+### Metrics
+
+- Sensitivity: Fraction of known functions correctly annotated
+- Specificity: Fraction of annotations that are correct
+- Dark matter reduction: Decrease in unannotated proteins vs. sequence-only methods
+
+## References
+
+1. Heinzinger M, et al. (2023). ProstT5: Bilingual Language Model for Protein Sequence and Structure. bioRxiv.
+
+2. van Kempen M, et al. (2023). Fast and accurate protein structure search with Foldseek. Nature Biotechnology.
+
+3. Terzian P, et al. (2021). BFVD: Big Fantastic Virus Database.
+
+4. Oughtred R, et al. (2023). Viro3D: A comprehensive resource for virus protein structures.
+
+5. Bouras G, et al. (2023). Phold: Phage annotation using protein structural homology.

@@ -9,6 +9,11 @@ import pandas as pd
 from vhold import __version__
 from vhold.results.annotations import AnnotatedProtein
 from vhold.results.consensus import ConsensusResult
+from vhold.results.dark_matter import (
+    analyze_dark_matter,
+    get_dark_matter_summary,
+    DarkMatterReport,
+)
 from vhold.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -325,6 +330,10 @@ def write_consensus_summary_json(
             "median": sorted(evalues)[len(evalues) // 2],
         }
 
+    # Analyze dark matter proteins
+    dark_matter_report = analyze_dark_matter(annotations)
+    dark_matter_summary = get_dark_matter_summary(dark_matter_report)
+
     # Build summary
     summary = {
         "vhold_version": __version__,
@@ -346,6 +355,7 @@ def write_consensus_summary_json(
             "consensus_score_stats": score_stats,
             "evalue_stats": evalue_stats,
         },
+        "dark_matter": dark_matter_summary,
     }
 
     # Write JSON
@@ -353,6 +363,44 @@ def write_consensus_summary_json(
         json.dump(summary, f, indent=2)
 
     logger.info(f"Wrote consensus summary to {output_path}")
+
+
+def write_dark_matter_tsv(
+    dark_matter_report: DarkMatterReport,
+    output_path: Path | str,
+) -> None:
+    """Write dark matter proteins to a separate TSV file.
+
+    Args:
+        dark_matter_report: DarkMatterReport from analysis
+        output_path: Output file path
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not dark_matter_report.proteins:
+        logger.info("No dark matter proteins to write")
+        return
+
+    rows = []
+    for protein in dark_matter_report.proteins:
+        row = {
+            "query_id": protein.query_id,
+            "query_length": protein.query_length,
+            "category": protein.category,
+            "reason": protein.reason,
+            "best_evalue": protein.best_evalue if protein.best_evalue else "",
+            "best_identity": protein.best_identity if protein.best_identity else "",
+            "confidence_level": protein.confidence_level,
+            "consensus_score": protein.consensus_score if protein.consensus_score > 0 else "",
+            "description": protein.description,
+            "databases_with_hits": ",".join(protein.databases_with_hits),
+        }
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    df.to_csv(output_path, sep="\t", index=False)
+    logger.info(f"Wrote {len(df)} dark matter proteins to {output_path}")
 
 
 def generate_report_consensus(
@@ -398,5 +446,12 @@ def generate_report_consensus(
         parameters=parameters,
     )
     output_files["json"] = json_path
+
+    # Write dark matter TSV
+    dark_matter_report = analyze_dark_matter(annotations)
+    if dark_matter_report.total_dark_matter > 0:
+        dm_path = output_dir / f"{prefix}_dark_matter.tsv"
+        write_dark_matter_tsv(dark_matter_report, dm_path)
+        output_files["dark_matter"] = dm_path
 
     return output_files
