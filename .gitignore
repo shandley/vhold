@@ -43,3 +43,5 @@ htmlcov/
 # vhold specific
 *.log
 test_output/
+test_output/
+test_output_full/

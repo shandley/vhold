@@ -1,4 +1,0 @@
-query_id	query_length	description	confidence_level	source_db	target_id	evalue	identity	coverage	bits	prob	num_hits
-test_protein_1	142	hypothetical protein	none								0
-test_protein_2	98	hypothetical protein	none								0
-test_protein_3	100	hypothetical protein	none								0
