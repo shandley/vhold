@@ -70,9 +70,12 @@ class DarkMatterReport:
     # Individual proteins
     proteins: list[DarkMatterProtein] = field(default_factory=list)
 
+    # Metagenomic characterizations (optional, added by enhance_dark_matter_with_metagenomics)
+    metagenomic_characterizations: list = field(default_factory=list)
+
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON output."""
-        return {
+        result = {
             "summary": {
                 "total_proteins": self.total_proteins,
                 "total_dark_matter": self.total_dark_matter,
@@ -100,6 +103,26 @@ class DarkMatterReport:
                 for p in self.proteins
             ],
         }
+
+        # Add metagenomic characterizations if available
+        if self.metagenomic_characterizations:
+            result["metagenomic_characterizations"] = [
+                c.to_dict() for c in self.metagenomic_characterizations
+            ]
+            # Add summary stats
+            high_priority = sum(
+                1 for c in self.metagenomic_characterizations if c.priority_score >= 0.5
+            )
+            conserved = sum(
+                1 for c in self.metagenomic_characterizations
+                if c.metagenomic_context and c.metagenomic_context.is_conserved_in_metagenomes
+            )
+            result["summary"]["metagenomic_enhancement"] = {
+                "high_priority_count": high_priority,
+                "conserved_in_metagenomes": conserved,
+            }
+
+        return result
 
 
 def classify_dark_matter(result: ConsensusResult) -> Optional[DarkMatterProtein]:
@@ -265,3 +288,57 @@ def get_dark_matter_summary(report: DarkMatterReport) -> dict:
         "by_confidence": report.by_confidence,
         "length_stats": report.length_stats,
     }
+
+
+def enhance_dark_matter_with_metagenomics(
+    report: DarkMatterReport,
+    sequences: dict[str, str] | None = None,
+    search_serratus: bool = True,
+) -> "DarkMatterReport":
+    """Enhance dark matter report with metagenomic context.
+
+    This function searches metagenomic databases (Serratus, Logan) to
+    provide additional context for dark matter proteins.
+
+    Args:
+        report: DarkMatterReport from analyze_dark_matter
+        sequences: Optional dict mapping query_id to amino acid sequence
+        search_serratus: Whether to search Serratus (requires network)
+
+    Returns:
+        Enhanced DarkMatterReport with metagenomic context
+    """
+    if not report.proteins:
+        return report
+
+    try:
+        from vhold.databases.metagenomics import characterize_dark_matter_batch
+
+        characterizations = characterize_dark_matter_batch(
+            report.proteins,
+            sequences=sequences,
+            search_serratus=search_serratus,
+            search_logan=False,  # Logan requires external setup
+        )
+
+        # Store characterizations in report
+        report.metagenomic_characterizations = characterizations
+
+        # Count high-priority proteins
+        high_priority = sum(1 for c in characterizations if c.priority_score >= 0.5)
+        conserved_count = sum(
+            1 for c in characterizations
+            if c.metagenomic_context and c.metagenomic_context.is_conserved_in_metagenomes
+        )
+
+        logger.info(
+            f"Metagenomic enhancement: {high_priority} high-priority proteins, "
+            f"{conserved_count} conserved in metagenomes"
+        )
+
+    except ImportError as e:
+        logger.warning(f"Metagenomic enhancement not available: {e}")
+    except Exception as e:
+        logger.warning(f"Metagenomic enhancement failed: {e}")
+
+    return report

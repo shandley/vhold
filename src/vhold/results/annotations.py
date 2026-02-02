@@ -11,6 +11,7 @@ from vhold.databases.viro3d import (
     load_viro3d_metadata,
     load_viro3d_annotations,
     get_viro3d_annotation,
+    get_annotation_expansion,
 )
 from vhold.results.parser import FoldseekHit
 from vhold.utils.constants import CONFIDENCE_HIGH, CONFIDENCE_MEDIUM, CONFIDENCE_LOW
@@ -260,6 +261,27 @@ def transfer_annotations(
     return results
 
 
+def _extract_uniprot_accession(seq_id: str) -> str:
+    """Extract UniProt accession from a sequence ID.
+
+    Handles formats like:
+    - sp|P0DTC2|SPIKE_SARS2 -> P0DTC2
+    - tr|A0A8B6RJP7|A0A8B6RJP7_9CORO -> A0A8B6RJP7
+    - P0DTC2 -> P0DTC2
+
+    Args:
+        seq_id: Sequence identifier
+
+    Returns:
+        Extracted accession or original ID
+    """
+    if "|" in seq_id:
+        parts = seq_id.split("|")
+        if len(parts) >= 2:
+            return parts[1]
+    return seq_id
+
+
 def transfer_annotations_consensus(
     hits: list[FoldseekHit],
     query_lengths: dict[str, int],
@@ -283,17 +305,29 @@ def transfer_annotations_consensus(
     """
     from vhold.results.consensus import calculate_consensus
 
-    # Group hits by query
+    # Build mapping from truncated IDs to full IDs
+    # Foldseek truncates UniProt-format IDs: sp|P0DTC2|SPIKE_SARS2 -> P0DTC2
+    truncated_to_full: dict[str, str] = {}
+    for full_id in query_lengths.keys():
+        truncated = _extract_uniprot_accession(full_id)
+        truncated_to_full[truncated] = full_id
+        # Also map full ID to itself in case foldseek doesn't truncate
+        truncated_to_full[full_id] = full_id
+
+    # Group hits by query, mapping truncated IDs back to full IDs
     hits_by_query: dict[str, list[FoldseekHit]] = {}
     for hit in hits:
-        if hit.query not in hits_by_query:
-            hits_by_query[hit.query] = []
-        hits_by_query[hit.query].append(hit)
+        # Map the foldseek query ID back to the original full ID
+        full_query_id = truncated_to_full.get(hit.query, hit.query)
+        if full_query_id not in hits_by_query:
+            hits_by_query[full_query_id] = []
+        hits_by_query[full_query_id].append(hit)
 
     # Load metadata
     bfvd_metadata = None
     viro3d_metadata = None
     viro3d_annotations = None
+    viro3d_expansion = None
 
     try:
         bfvd_metadata = load_bfvd_metadata(db_dir)
@@ -311,6 +345,16 @@ def transfer_annotations_consensus(
         viro3d_annotations = load_viro3d_annotations(db_dir)
     except FileNotFoundError:
         viro3d_annotations = pd.DataFrame()
+
+    # Load Viro3D annotation expansion (Pfam, GO, SUPERFAMILY)
+    try:
+        viro3d_expansion = get_annotation_expansion(db_dir)
+        viro3d_expansion.load_all()
+        if viro3d_expansion.has_annotations():
+            logger.info(f"Loaded annotation expansion: {viro3d_expansion.stats}")
+    except Exception as e:
+        logger.warning(f"Could not load Viro3D annotation expansion: {e}")
+        viro3d_expansion = None
 
     # Collect BFVD UniProt IDs for batch prefetching
     uniprot_cache = None
@@ -350,6 +394,7 @@ def transfer_annotations_consensus(
                     hit.target,
                     viro3d_metadata,
                     viro3d_annotations if len(viro3d_annotations) > 0 else None,
+                    annotation_expansion=viro3d_expansion,
                 )
                 if ann:
                     annotation = ann

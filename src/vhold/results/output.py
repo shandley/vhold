@@ -47,6 +47,9 @@ CONSENSUS_TSV_COLUMNS = [
     "consensus_score",
     "agreement",
     "functional_category",
+    "classification_source",
+    "structure_quality_score",
+    "structure_quality_source",
     "primary_source",
     "primary_target",
     "primary_evalue",
@@ -59,6 +62,10 @@ CONSENSUS_TSV_COLUMNS = [
     "organism",
     "gene",
     "uniprot_id",
+    "pfam",
+    "go_bp",
+    "go_mf",
+    "superfamily",
     "bfvd_hits",
     "viro3d_hits",
 ]
@@ -330,6 +337,28 @@ def write_consensus_summary_json(
             "median": sorted(evalues)[len(evalues) // 2],
         }
 
+    # Structure quality statistics
+    structure_quality_scores = [
+        ann.structure_quality_score
+        for ann in annotations.values()
+        if ann.is_annotated and ann.structure_quality_source != "none"
+    ]
+    structure_quality_stats = {}
+    if structure_quality_scores:
+        structure_quality_stats = {
+            "min": round(min(structure_quality_scores), 3),
+            "max": round(max(structure_quality_scores), 3),
+            "mean": round(sum(structure_quality_scores) / len(structure_quality_scores), 3),
+            "median": round(sorted(structure_quality_scores)[len(structure_quality_scores) // 2], 3),
+        }
+
+    # Structure quality source distribution
+    structure_source_dist: dict[str, int] = {}
+    for ann in annotations.values():
+        if ann.is_annotated:
+            src = ann.structure_quality_source
+            structure_source_dist[src] = structure_source_dist.get(src, 0) + 1
+
     # Analyze dark matter proteins
     dark_matter_report = analyze_dark_matter(annotations)
     dark_matter_summary = get_dark_matter_summary(dark_matter_report)
@@ -354,6 +383,8 @@ def write_consensus_summary_json(
             "primary_source_distribution": source_dist,
             "consensus_score_stats": score_stats,
             "evalue_stats": evalue_stats,
+            "structure_quality_stats": structure_quality_stats,
+            "structure_quality_source_distribution": structure_source_dist,
         },
         "dark_matter": dark_matter_summary,
     }

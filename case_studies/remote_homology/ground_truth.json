@@ -1,0 +1,157 @@
+{
+  "description": "Ground truth annotations for divergent viral proteins",
+  "source": "UniProt reviewed entries + literature",
+  "proteins": {
+    "sp|P03612|CAPSD_BPMS2": {
+      "name": "MS2 Capsid protein",
+      "organism": "Escherichia phage MS2",
+      "virus_family": "Leviviridae",
+      "genome_type": "ssRNA+",
+      "function": "Major capsid protein forming T=3 icosahedral shell",
+      "category": "structural",
+      "pfam": ["PF01819"],
+      "go_terms": ["GO:0019028", "GO:0005198"],
+      "pdb": ["2MS2", "1AQ3"],
+      "length": 129,
+      "expected_challenge": "RNA phage - divergent from DNA phage databases"
+    },
+    "sp|P03610|MATA_BPMS2": {
+      "name": "MS2 Maturation protein A",
+      "organism": "Escherichia phage MS2",
+      "virus_family": "Leviviridae",
+      "genome_type": "ssRNA+",
+      "function": "Single copy protein for host attachment and RNA injection",
+      "category": "structural",
+      "pfam": ["PF03890"],
+      "go_terms": ["GO:0019062", "GO:0046718"],
+      "pdb": ["5TC1"],
+      "length": 393,
+      "expected_challenge": "Unique maturation protein, few homologs"
+    },
+    "sp|P00585|RDRP_BPMS2": {
+      "name": "MS2 RNA-directed RNA polymerase beta chain",
+      "organism": "Escherichia phage MS2",
+      "virus_family": "Leviviridae",
+      "genome_type": "ssRNA+",
+      "function": "Catalytic subunit of replicase complex",
+      "category": "replication",
+      "pfam": ["PF00680"],
+      "go_terms": ["GO:0003968", "GO:0039694"],
+      "pdb": [],
+      "length": 545,
+      "expected_challenge": "Divergent RdRp, requires host factors"
+    },
+    "sp|P03609|LYS_BPMS2": {
+      "name": "MS2 Lysis protein",
+      "organism": "Escherichia phage MS2",
+      "virus_family": "Leviviridae",
+      "genome_type": "ssRNA+",
+      "function": "Single-gene lysis protein targeting MurA",
+      "category": "lysis",
+      "pfam": [],
+      "go_terms": ["GO:0019076", "GO:0009253"],
+      "pdb": [],
+      "length": 75,
+      "expected_challenge": "Very small, unique lysis mechanism"
+    },
+    "sp|P03615|CAPSD_BPQBE": {
+      "name": "Qbeta Capsid protein",
+      "organism": "Escherichia virus Qbeta",
+      "virus_family": "Leviviridae",
+      "genome_type": "ssRNA+",
+      "function": "Major capsid protein",
+      "category": "structural",
+      "pfam": ["PF01819"],
+      "go_terms": ["GO:0019028", "GO:0005198"],
+      "pdb": ["1QBE"],
+      "length": 132,
+      "expected_challenge": "RNA phage capsid"
+    },
+    "sp|P69170|CAPSD_BPR17": {
+      "name": "R17 Capsid protein",
+      "organism": "Enterobacteria phage R17",
+      "virus_family": "Leviviridae",
+      "genome_type": "ssRNA+",
+      "function": "Major capsid protein",
+      "category": "structural",
+      "pfam": ["PF01819"],
+      "go_terms": ["GO:0019028"],
+      "pdb": [],
+      "length": 129,
+      "expected_challenge": "RNA phage capsid"
+    },
+    "sp|P32503|GAG_SCVLA": {
+      "name": "L-A virus Major capsid protein (Gag)",
+      "organism": "Saccharomyces cerevisiae virus L-A",
+      "virus_family": "Totiviridae",
+      "genome_type": "dsRNA",
+      "function": "Capsid protein with decapping activity",
+      "category": "structural",
+      "pfam": ["PF05518"],
+      "go_terms": ["GO:0019028", "GO:0004651"],
+      "pdb": ["1M1C"],
+      "length": 680,
+      "expected_challenge": "Fungal dsRNA virus - very divergent"
+    },
+    "sp|P03582|MVP_TMVOM": {
+      "name": "TMV Movement protein",
+      "organism": "Tobacco mosaic virus",
+      "virus_family": "Virgaviridae",
+      "genome_type": "ssRNA+",
+      "function": "Cell-to-cell movement through plasmodesmata",
+      "category": "movement",
+      "pfam": ["PF01107"],
+      "go_terms": ["GO:0046740", "GO:0005515"],
+      "pdb": [],
+      "length": 268,
+      "expected_challenge": "Plant virus - unique movement function"
+    },
+    "sp|P03536|NSP3_ROTS1": {
+      "name": "Rotavirus NSP3",
+      "organism": "Rotavirus A",
+      "virus_family": "Reoviridae",
+      "genome_type": "dsRNA",
+      "function": "Translation enhancer, binds 3' end of viral mRNA",
+      "category": "regulatory",
+      "pfam": ["PF00620"],
+      "go_terms": ["GO:0003723", "GO:0006417"],
+      "pdb": ["1KNZ"],
+      "length": 315,
+      "expected_challenge": "dsRNA virus regulatory protein"
+    },
+    "sp|P11124|RDRP_BPPH6": {
+      "name": "Phi6 RNA-directed RNA polymerase",
+      "organism": "Pseudomonas phage phi6",
+      "virus_family": "Cystoviridae",
+      "genome_type": "dsRNA",
+      "function": "Polymerase for segmented dsRNA genome",
+      "category": "replication",
+      "pfam": ["PF00680"],
+      "go_terms": ["GO:0003968", "GO:0039694"],
+      "pdb": ["1HI0"],
+      "length": 664,
+      "expected_challenge": "Unique dsRNA phage polymerase"
+    }
+  },
+  "summary": {
+    "total_proteins": 10,
+    "categories": {
+      "structural": 5,
+      "replication": 2,
+      "lysis": 1,
+      "movement": 1,
+      "regulatory": 1
+    },
+    "virus_families": {
+      "Leviviridae": 6,
+      "Totiviridae": 1,
+      "Virgaviridae": 1,
+      "Reoviridae": 1,
+      "Cystoviridae": 1
+    },
+    "genome_types": {
+      "ssRNA+": 7,
+      "dsRNA": 3
+    }
+  }
+}

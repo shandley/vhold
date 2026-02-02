@@ -145,7 +145,48 @@ A functional annotation bonus (1.1×) is applied when the annotation contains a 
 weighted_score = quality × database_weight × functional_bonus
 ```
 
-#### 4.3 Cross-Database Agreement
+#### 4.3 Structure Quality Weighting
+
+The quality of the AlphaFold/ESMFold/ColabFold structure prediction used for the database hit influences the reliability of the homology match. Structure quality is assessed using pLDDT (predicted Local Distance Difference Test) and pTM (predicted Template Modeling) scores.
+
+**Quality Metrics Sources (in priority order)**:
+
+1. **ColabFold** (preferred when MSA depth ≥ 100): Uses multiple sequence alignments for more accurate predictions
+2. **ESMFold**: Single-sequence predictions, fast but may be less accurate
+3. **BFVD AlphaFold2**: Original AlphaFold2 predictions from the BFVD database
+
+**Structure Quality Score Calculation**:
+
+```
+pLDDT Score (0-1):
+  - High (≥70):     0.9-1.0 (normalized to range)
+  - Medium (50-70): 0.7-0.9
+  - Low (30-50):    0.5-0.7
+  - Very Low (<30): 0.3-0.5
+
+pTM Score (0-1):
+  - High (≥0.5):    0.85-1.0
+  - Medium (0.3-0.5): 0.7-0.85
+  - Low (<0.3):     0.5-0.7
+
+Combined Structure Quality = 0.7 × pLDDT_score + 0.3 × pTM_score
+```
+
+**MSA Depth Bonus** (ColabFold only):
+- MSA depth ≥1000: 5% bonus
+- MSA depth ≥500: 2% bonus
+
+**Integration with Hit Quality**:
+
+Structure quality adjusts the alignment quality score:
+
+```
+combined_quality = alignment_quality × (0.85 + 0.15 × structure_quality)
+```
+
+This means structure quality can reduce the final score by up to 15% for low-quality structure predictions, while high-quality predictions provide scores very close to the alignment-based quality.
+
+#### 4.4 Cross-Database Agreement
 
 When hits exist in multiple databases, annotation agreement is assessed:
 
@@ -162,7 +203,7 @@ similarity = |terms₁ ∩ terms₂| / |terms₁ ∪ terms₂|
    - **Disagree**: similarity < 0.2 (no bonus)
    - **Single**: only one database has hits
 
-#### 4.4 Final Consensus Score
+#### 4.5 Final Consensus Score
 
 ```
 consensus_score = primary_weighted_score × agreement_bonus
@@ -185,21 +226,40 @@ Confidence levels guide interpretation of annotation reliability:
 
 ### Step 6: Functional Category Classification
 
-Annotated proteins are classified into functional categories based on keyword matching in descriptions and gene names:
+Annotated proteins are classified into functional categories using a hierarchical evidence-based approach. Classification leverages multiple annotation sources when available:
 
-| Category | Representative Keywords |
-|----------|------------------------|
-| Structural | capsid, coat, envelope, spike, matrix, tail, fiber, portal, head, nucleocapsid |
-| Replication | polymerase, replicase, helicase, primase, RdRp, reverse transcriptase |
-| Protease | protease, peptidase, maturase, 3CL, MPro |
-| Nuclease | nuclease, endonuclease, exonuclease, integrase, recombinase |
-| Packaging | terminase, packaging, scaffold |
-| Regulatory | transcription, repressor, activator, regulator |
-| Movement | movement, cell-to-cell, transport |
-| Lysis | lysin, holin, endolysin, spanin |
-| Unknown | hypothetical, uncharacterized, DUF |
+#### 6.1 Evidence Hierarchy (Priority Order)
 
-Classification uses first-match priority, checked in the order listed.
+1. **Pfam Domain Annotations** (highest priority): Direct domain-level functional classification
+2. **SUPERFAMILY Annotations**: Structural superfamily membership
+3. **GO Biological Process**: Biological process involvement
+4. **GO Molecular Function**: Molecular activity classification
+5. **Keyword Matching** (fallback): Text-based classification from descriptions
+
+#### 6.2 Functional Categories
+
+| Category | Description | Evidence Sources |
+|----------|-------------|------------------|
+| **Structural** | Virion structural proteins | Pfam: capsid, coat, envelope, spike; GO BP: viral capsid assembly |
+| **Replication** | Genome replication machinery | Pfam: polymerase, helicase, primase, thymidine kinase; GO BP: DNA replication |
+| **Protease** | Proteolytic enzymes | Pfam: peptidase, assemblin; GO MF: peptidase activity |
+| **Nuclease** | Nucleic acid processing | Pfam: nuclease, integrase; GO MF: nuclease activity |
+| **Packaging** | Genome packaging | Pfam: terminase, UL6; GO BP: genome packaging |
+| **Regulatory** | Gene regulation | Pfam: kinase domain; GO BP: regulation of transcription |
+| **Movement** | Cell-to-cell movement | Pfam: movement protein |
+| **Lysis** | Host cell lysis | Pfam: lysin, holin, endolysin |
+| **Host Interaction** | Host interaction/immune evasion | GO BP: perturbation of host defense |
+| **Entry** | Host cell entry | GO BP: fusion with host membrane |
+| **Unknown** | Uncharacterized function | No functional evidence available |
+
+#### 6.3 Classification Source Tracking
+
+Each classification includes a `classification_source` field indicating what evidence was used:
+- `pfam:<domain_name>` - Pfam domain match
+- `superfamily:<name>` - SUPERFAMILY match
+- `go_bp:<term>` - GO Biological Process match
+- `go_mf:<term>` - GO Molecular Function match
+- `keywords` - Text-based keyword matching (fallback)
 
 ### Step 7: Dark Matter Analysis
 
@@ -229,6 +289,131 @@ dark_matter_rate = (no_hits + unknown_function + weak_hits) / total_proteins
 
 Length distribution statistics help identify whether dark matter proteins have characteristic sizes.
 
+#### Metagenomic Characterization (Optional)
+
+Dark matter proteins can be further characterized using large-scale metagenomic resources:
+
+**1. Serratus Integration** (serratus.io)
+- Ultra-deep search results from 5.7 million SRA datasets
+- Identifies viral families with related sequences
+- Provides environmental and geographic distribution context
+- API-based search with rate limiting
+
+**2. Logan Integration** (logan-search.org)
+- Planetary-scale genome assembly from 27.3M SRA datasets
+- k-mer based sequence search for environmental distribution
+- Identifies conserved sequences across metagenomes
+
+**Metagenomic Context Output**:
+- `serratus_family_hits`: Viral families with related sequences
+- `serratus_total_runs`: Number of SRA datasets with matches
+- `is_conserved_in_metagenomes`: Boolean indicating conservation
+- `conservation_score`: 0-1 score based on metagenomic prevalence
+
+**Priority Scoring**:
+Dark matter proteins are assigned priority scores (0-1) for follow-up analysis based on:
+- No structural homologs (+0.4)
+- Conservation in metagenomes (+0.3)
+- Unknown function with strong structural match (+0.2)
+- Optimal length for single-domain protein (100-500 aa) (+0.1)
+
+**Recommendations**:
+Automated recommendations are generated for each dark matter protein:
+- Experimental characterization for conserved novel proteins
+- AlphaFold/ESMFold prediction for novel folds
+- InterProScan domain parsing for large proteins
+- HHpred/DALI remote homology search
+
+#### ESM Metagenomic Atlas Search (Optional)
+
+For dark matter proteins without viral database hits, vHold can search the ESM Metagenomic Atlas to find structural homologs in metagenomic protein space.
+
+**Database**: ESMAtlas30
+- 617+ million protein structures predicted from metagenomic sequences
+- Pre-clustered at 30% sequence identity for efficient searching
+- Includes proteins from MGnify and other metagenomic sources
+- Structures predicted by ESMFold with quality metrics
+
+**Analysis Pipeline**:
+1. Extract 3Di predictions for dark matter proteins
+2. Create Foldseek database from dark matter sequences
+3. Search against ESMAtlas30 with configured E-value threshold
+4. Parse results and identify novel fold candidates
+
+**Novel Fold Detection**:
+Proteins with ESMAtlas hits but no BFVD/Viro3D hits may represent:
+- Novel viral folds not yet characterized in cultured isolates
+- Horizontally transferred domains from host or environmental microbes
+- Conserved viral proteins with metagenomic evidence
+
+**ESMAtlas Output**:
+- `has_metagenomic_homolog`: Boolean indicating ESMAtlas hits
+- `has_novel_fold_match`: Potential novel fold (ESM/MGY-prefixed targets)
+- `unique_clusters`: Number of distinct structural clusters
+- `best_evalue`: Best E-value from ESMAtlas search
+- `best_identity`: Best sequence identity from ESMAtlas search
+
+**High Priority Targets**:
+Proteins flagged as high priority for follow-up:
+- No hits in BFVD or Viro3D (truly novel to viruses)
+- BUT has hits in ESMAtlas (conserved in metagenomes)
+- Suggests functionally important but uncharacterized viral proteins
+
+### Step 8: Cross-Database Validation
+
+vHold includes a validation framework that assesses annotation reliability by comparing results across databases.
+
+#### Validation Status
+
+Each protein receives a validation status based on cross-database support:
+
+| Status | Description | Reliability |
+|--------|-------------|-------------|
+| **Validated** | Consistent across multiple databases (similarity ≥50%) | High |
+| **Partial** | Some agreement (similarity 20-50%) | Medium |
+| **Conflicting** | Databases disagree on annotation | Low |
+| **Single Source** | Only one database has annotation | Moderate |
+| **Unvalidated** | No validation possible | Unknown |
+
+#### Conflict Detection
+
+Conflicts are detected when databases provide different annotations and classified by severity:
+
+| Severity | Description | Criteria |
+|----------|-------------|----------|
+| **Critical** | Completely different functions | Different functional categories (e.g., structural vs. replication) |
+| **Major** | Different related categories | Related categories or unknown with low similarity |
+| **Minor** | Same category, different details | Same category, similarity 20-50% |
+| **Negligible** | Terminology differences | Same category, similarity ≥50% |
+
+#### Database Consistency Metrics
+
+Pairwise consistency between databases is quantified:
+
+```
+consistency_score = 0.6 × agreement_rate + 0.3 × category_agreement_rate + 0.1 × overlap_bonus
+```
+
+Where:
+- `agreement_rate` = annotations with similarity ≥50% / queries in both databases
+- `category_agreement_rate` = same functional category / queries in both databases
+- `overlap_bonus` = min(1.0, overlap_rate × 2)
+
+#### Reliability Scoring
+
+Each annotation receives a reliability score (0-1) based on:
+- Number of supporting databases (30%)
+- Cross-database agreement (50%)
+- Functional category consistency (20%)
+
+#### Validation Output
+
+The validation report includes:
+- Validation status distribution
+- Reliability score statistics (mean, median, distribution)
+- Database consistency metrics for each pair
+- List of critical conflicts requiring manual review
+
 ## Output Formats
 
 ### Main Results Table (TSV)
@@ -242,6 +427,9 @@ Length distribution statistics help identify whether dark matter proteins have c
 | consensus_score | Combined quality score (0-1) |
 | agreement | agree/partial/disagree/single/none |
 | functional_category | Assigned functional class |
+| classification_source | Evidence source for classification (pfam/go_bp/go_mf/superfamily/keywords) |
+| structure_quality_score | Structure prediction quality (0-1) |
+| structure_quality_source | Source of structure quality (colabfold/esmfold/bfvd_af2/none) |
 | primary_source | Database providing primary annotation |
 | primary_target | Best hit identifier |
 | primary_evalue | E-value of primary hit |
@@ -263,6 +451,8 @@ Length distribution statistics help identify whether dark matter proteins have c
 - Functional category distribution
 - Primary source distribution
 - E-value and consensus score statistics
+- Structure quality statistics (min, max, mean, median)
+- Structure quality source distribution
 - Dark matter summary
 
 ### Dark Matter Table (TSV)
@@ -317,3 +507,9 @@ Performance should be evaluated on:
 4. Oughtred R, et al. (2023). Viro3D: A comprehensive resource for virus protein structures.
 
 5. Bouras G, et al. (2023). Phold: Phage annotation using protein structural homology.
+
+6. Edgar RC, et al. (2022). Petabase-scale sequence alignment catalyses viral discovery. Nature.
+
+7. Roux S, et al. (2024). Logan: Planetary-Scale Genome Assembly Surveys Life's Diversity. bioRxiv.
+
+8. Lin Z, et al. (2023). Evolutionary-scale prediction of atomic-level protein structure with a language model. Science.

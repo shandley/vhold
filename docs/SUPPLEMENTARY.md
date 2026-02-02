@@ -506,3 +506,279 @@ Three well-characterized viral proteins were used for validation:
 - **Dark matter**: 0% (0/3)
 
 All proteins correctly classified to expected functional categories with high confidence.
+
+## S9. Cross-Database Validation Framework
+
+### S9.1 Validation Status Definitions
+
+| Status | Description | Criteria |
+|--------|-------------|----------|
+| **Validated** | Consistent across databases | Term similarity ≥50% |
+| **Partial** | Some agreement | Term similarity 20-50% |
+| **Conflicting** | Databases disagree | Term similarity <20% |
+| **Single Source** | Only one database | No comparison possible |
+| **Unvalidated** | No annotations | No data to validate |
+
+### S9.2 Conflict Severity Classification
+
+```python
+def determine_conflict_severity(category1, category2, similarity):
+    """Determine severity of annotation conflict."""
+    if category1 == category2:
+        if similarity >= 0.5:
+            return "negligible"  # Same category, similar terms
+        return "minor"  # Same category, different terms
+
+    # Check for related categories
+    related = [
+        {"structural", "packaging"},
+        {"replication", "nuclease"},
+        {"protease", "regulatory"},
+    ]
+    for related_set in related:
+        if category1 in related_set and category2 in related_set:
+            return "major"
+
+    return "critical"  # Completely different functions
+```
+
+### S9.3 Reliability Score Calculation
+
+```
+reliability_score = 0.3 × db_count_factor + 0.5 × agreement_factor + 0.2 × category_factor
+
+where:
+    db_count_factor = min(1.0, num_databases / 3)
+    agreement_factor = average_term_similarity
+    category_factor = 1.0 if all same category else 0.5
+```
+
+### S9.4 Database Consistency Metrics
+
+For each pair of databases (e.g., BFVD vs. Viro3D):
+
+| Metric | Definition |
+|--------|------------|
+| overlap_rate | Queries with hits in both / total queries |
+| agreement_rate | Queries agreeing (sim ≥0.5) / queries in both |
+| category_agreement_rate | Same category / queries in both |
+| consistency_score | 0.6×agreement + 0.3×category_agreement + 0.1×overlap_bonus |
+
+## S10. ESM Metagenomic Atlas Integration
+
+### S10.1 Database Specifications
+
+| Property | Value |
+|----------|-------|
+| Database name | ESMAtlas30 |
+| Total structures | 617+ million |
+| Source | MGnify metagenomic sequences |
+| Prediction method | ESMFold |
+| Clustering | 30% sequence identity |
+| Disk size | ~50 GB (compressed) |
+
+### S10.2 Novel Fold Detection
+
+Proteins are flagged as potential novel folds when:
+1. They have ESMAtlas hits but NO hits in BFVD or Viro3D
+2. Target IDs contain "ESM" or "MGY" prefixes (metagenomic origin)
+3. This suggests structures conserved in metagenomes but absent from cultured viral isolates
+
+### S10.3 High Priority Target Identification
+
+```python
+# Proteins flagged as high priority for follow-up
+for protein in dark_matter_proteins:
+    if protein.category == "no_hits":  # No viral DB hits
+        if protein.query_id in esmatlas_results:  # Has ESMAtlas hits
+            # Novel to viruses but conserved in metagenomes
+            high_priority_targets.append(protein.query_id)
+```
+
+### S10.4 ESMAtlas Search Output
+
+| Field | Description |
+|-------|-------------|
+| has_metagenomic_homolog | Boolean: any ESMAtlas hits |
+| has_novel_fold_match | Boolean: ESM/MGY targets detected |
+| unique_clusters | Number of distinct structural clusters |
+| best_evalue | Best E-value from search |
+| best_identity | Best sequence identity |
+
+## S11. Benchmarking Framework
+
+### S11.1 Evaluation Metrics
+
+**Classification Metrics:**
+```python
+@dataclass
+class ConfusionMatrix:
+    true_positives: int
+    true_negatives: int
+    false_positives: int
+    false_negatives: int
+
+    @property
+    def sensitivity(self):  # Recall, TPR
+        return TP / (TP + FN)
+
+    @property
+    def specificity(self):  # TNR
+        return TN / (TN + FP)
+
+    @property
+    def precision(self):  # PPV
+        return TP / (TP + FP)
+
+    @property
+    def f1_score(self):
+        return 2 * (precision * recall) / (precision + recall)
+
+    @property
+    def matthews_correlation(self):  # MCC
+        return (TP*TN - FP*FN) / sqrt((TP+FP)(TP+FN)(TN+FP)(TN+FN))
+```
+
+**Calibration Metrics:**
+```python
+@dataclass
+class CalibrationResult:
+    expected_calibration_error: float  # ECE
+    maximum_calibration_error: float   # MCE
+    brier_score: float                 # Mean squared error of probabilities
+```
+
+### S11.2 Benchmark Datasets
+
+| Dataset | Size | Purpose |
+|---------|------|---------|
+| Gold Standard | 500-1000 | Experimentally verified proteins |
+| Holdout Set | 200-500 | Recently discovered viruses |
+| Synthetic | 350 | Controlled sequence divergence |
+| Dark Matter | 1000-5000 | Metagenomic unknowns |
+| Phage Genomes | 20-50 | Whole genome evaluation |
+
+### S11.3 Dataset Schema
+
+```python
+@dataclass
+class GoldStandardEntry:
+    protein_id: str
+    sequence: str
+    true_function: str
+    true_category: str
+    evidence_code: str  # ECO ontology code
+    organism: str
+    viral_family: str
+    uniprot_id: str
+    max_identity_bfvd: float  # For stratification
+    max_identity_viro3d: float
+```
+
+### S11.4 Dark Matter Reduction Calculation
+
+```python
+def calculate_dark_matter_reduction(baseline, vhold, total):
+    """
+    baseline: Proteins unannotated by BLAST
+    vhold: Proteins unannotated by vHold
+    total: Total proteins
+    """
+    reduction_rate = (baseline - vhold) / baseline
+    proteins_illuminated = baseline - vhold
+
+    return {
+        "baseline_dark_matter": baseline,
+        "baseline_rate": baseline / total,
+        "vhold_dark_matter": vhold,
+        "vhold_rate": vhold / total,
+        "reduction_rate": reduction_rate,
+        "proteins_illuminated": proteins_illuminated,
+    }
+```
+
+## S12. Metagenomic Integration
+
+### S12.1 Serratus Integration
+
+**API Endpoint**: `https://api.serratus.io`
+
+**Query by viral family:**
+```python
+matches = serratus_client.search_by_family("Coronaviridae", limit=100)
+# Returns: SRA run IDs with viral matches
+```
+
+**Function-to-Family Mapping:**
+```python
+FUNCTION_TO_VIRAL_FAMILIES = {
+    "rdrp": ["Coronaviridae", "Picornaviridae", "Flaviviridae"],
+    "polymerase": ["Coronaviridae", "Rhabdoviridae", "Paramyxoviridae"],
+    "capsid": ["Picornaviridae", "Caliciviridae", "Astroviridae"],
+    "terminase": ["Caudovirales"],
+    "protease": ["Coronaviridae", "Picornaviridae"],
+}
+```
+
+### S12.2 Dark Matter Priority Scoring
+
+```python
+def calculate_priority(protein):
+    score = 0.0
+    reasons = []
+
+    # No structural homologs = highest priority
+    if protein.category == "no_hits":
+        score += 0.4
+        reasons.append("No structural homologs detected")
+
+    # Unknown function with strong structure match
+    elif protein.category == "unknown_function":
+        score += 0.2
+        reasons.append("Conserved structure but unknown function")
+
+    # Conservation in metagenomes
+    if protein.is_conserved_in_metagenomes:
+        score += 0.3
+        reasons.append("Conserved across metagenomes")
+
+    # Optimal length for single-domain protein
+    if 100 <= protein.length <= 500:
+        score += 0.1
+        reasons.append("Optimal length for characterization")
+
+    return score, reasons
+```
+
+### S12.3 Automated Recommendations
+
+| Condition | Recommendation |
+|-----------|----------------|
+| No structural hits + conserved in metagenomes | "High priority for experimental characterization" |
+| No structural hits | "AlphaFold/ESMFold prediction recommended" |
+| Length > 1000 aa | "InterProScan for multi-domain parsing" |
+| Length < 100 aa | "May be fragment or small peptide" |
+| Weak hits only | "HHpred/DALI for remote homology" |
+
+## S13. Code Statistics
+
+| Metric | Value |
+|--------|-------|
+| Total Python source code | ~9,300 lines |
+| Total test code | ~3,700 lines |
+| Total documentation | ~1,700 lines |
+| Number of tests | 319 |
+| Test modules | 12 |
+| Source modules | 36 |
+
+### S13.1 Module Breakdown
+
+| Module | Purpose | Lines |
+|--------|---------|-------|
+| validation/cross_database.py | Validation framework | ~800 |
+| results/consensus.py | Consensus scoring | ~570 |
+| databases/esm_atlas.py | ESM Atlas integration | ~550 |
+| databases/metagenomics.py | Serratus/Logan | ~500 |
+| benchmarks/evaluation.py | Evaluation pipeline | ~350 |
+| results/categories.py | Functional classification | ~450 |
+| results/dark_matter.py | Dark matter analysis | ~300 |

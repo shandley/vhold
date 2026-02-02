@@ -43,5 +43,13 @@ htmlcov/
 # vhold specific
 *.log
 test_output/
-test_output/
 test_output_full/
+test_output_enhanced/
+test_output_real/
+
+# Case study results (large files)
+case_studies/*/results/
+!case_studies/*/results/.gitkeep
+
+# Lock files
+uv.lock

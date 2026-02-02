@@ -4,7 +4,11 @@ import math
 from dataclasses import dataclass, field
 from typing import Optional
 
-from vhold.results.categories import classify_protein
+from vhold.results.categories import (
+    classify_protein,
+    AnnotationEvidence,
+    get_classification_source,
+)
 from vhold.results.parser import FoldseekHit
 from vhold.utils.logging import get_logger
 
@@ -24,15 +28,33 @@ CONFIDENCE_THRESHOLDS = {
     "low": 0.3,
 }
 
+# Structure quality thresholds (AlphaFold2/ESMFold/ColabFold)
+# pLDDT: predicted Local Distance Difference Test (0-100)
+# pTM: predicted Template Modeling score (0-1)
+STRUCTURE_QUALITY_THRESHOLDS = {
+    "high_plddt": 70.0,     # High confidence structure prediction
+    "medium_plddt": 50.0,   # Medium confidence
+    "low_plddt": 30.0,      # Low confidence (mostly disorder)
+    "high_ptm": 0.5,        # High global structure confidence
+    "medium_ptm": 0.3,      # Medium global confidence
+    "good_msa_depth": 100,  # MSA depth for reliable ColabFold predictions
+}
+
+# Structure quality weighting factor (0-1)
+# This determines how much structure quality affects the final score
+STRUCTURE_QUALITY_WEIGHT = 0.15  # 15% of total score influenced by structure quality
+
 
 @dataclass
 class HitScore:
     """Scored hit from a single database."""
 
     hit: FoldseekHit
-    quality_score: float
-    weighted_score: float
+    quality_score: float  # Combined alignment + structure quality
+    weighted_score: float  # quality_score * database_weight * bonuses
     annotation: dict = field(default_factory=dict)
+    structure_quality: float = 1.0  # Structure prediction quality (0-1)
+    structure_quality_source: str = "none"  # Source of structure quality
 
 
 @dataclass
@@ -59,6 +81,11 @@ class ConsensusResult:
 
     # Functional classification
     functional_category: str = "unknown"
+    classification_source: str = "keywords"  # What evidence was used for classification
+
+    # Structure quality metrics
+    structure_quality_score: float = 1.0  # Structure prediction quality (0-1)
+    structure_quality_source: str = "none"  # Source: colabfold, esmfold, bfvd_af2, none
 
     # All hits by database
     hits_by_db: dict = field(default_factory=dict)
@@ -90,6 +117,9 @@ class ConsensusResult:
             "consensus_score": round(self.consensus_score, 3),
             "agreement": self.agreement,
             "functional_category": self.functional_category,
+            "classification_source": self.classification_source,
+            "structure_quality_score": round(self.structure_quality_score, 3),
+            "structure_quality_source": self.structure_quality_source,
             "primary_source": self.primary_source,
             "primary_target": self.primary_hit.target if self.primary_hit else "",
             "primary_evalue": self.primary_hit.evalue if self.primary_hit else "",
@@ -114,6 +144,112 @@ class ConsensusResult:
             result[f"{db}_hits"] = len(hits)
 
         return result
+
+
+def calculate_structure_quality(annotation: dict) -> tuple[float, str]:
+    """Calculate structure quality score from pLDDT/pTM metrics.
+
+    Uses available structure quality metrics from ESMFold or ColabFold
+    predictions. Higher quality structures provide more reliable homology
+    detection.
+
+    Args:
+        annotation: Annotation dict containing structure quality fields
+
+    Returns:
+        Tuple of (quality_score, quality_source) where:
+        - quality_score: 0-1 score (1 = highest quality)
+        - quality_source: Which prediction method was used
+    """
+    if not annotation:
+        return 1.0, "none"  # No penalty if no quality data available
+
+    # Extract quality metrics
+    esmfold_plddt = annotation.get("esmfold_plddt")
+    esmfold_ptm = annotation.get("esmfold_ptm")
+    colabfold_plddt = annotation.get("colabfold_plddt")
+    colabfold_ptm = annotation.get("colabfold_ptm")
+    colabfold_msa_depth = annotation.get("colabfold_msa_depth")
+    # BFVD uses different field names
+    bfvd_plddt = annotation.get("plddt")
+    bfvd_ptm = annotation.get("ptm")
+
+    # Determine which source to use
+    # Prefer ColabFold if MSA depth is good, otherwise use ESMFold or BFVD
+    use_colabfold = (
+        colabfold_plddt is not None
+        and colabfold_msa_depth is not None
+        and colabfold_msa_depth >= STRUCTURE_QUALITY_THRESHOLDS["good_msa_depth"]
+    )
+
+    if use_colabfold:
+        plddt = colabfold_plddt
+        ptm = colabfold_ptm
+        source = "colabfold"
+    elif esmfold_plddt is not None:
+        plddt = esmfold_plddt
+        ptm = esmfold_ptm
+        source = "esmfold"
+    elif bfvd_plddt is not None:
+        plddt = bfvd_plddt
+        ptm = bfvd_ptm
+        source = "bfvd_af2"
+    elif colabfold_plddt is not None:
+        # Use ColabFold even with low MSA depth if nothing else available
+        plddt = colabfold_plddt
+        ptm = colabfold_ptm
+        source = "colabfold_low_msa"
+    else:
+        # No quality metrics available - no penalty
+        return 1.0, "none"
+
+    # Convert pLDDT to 0-1 score
+    # pLDDT is 0-100, we normalize and apply sigmoid-like scaling
+    # High confidence (>70) -> score near 1.0
+    # Medium confidence (50-70) -> score 0.7-0.9
+    # Low confidence (<50) -> score 0.5-0.7
+    # Very low (<30) -> score 0.3-0.5
+    if plddt is None:
+        plddt_score = 0.8  # Default if missing
+    elif plddt >= STRUCTURE_QUALITY_THRESHOLDS["high_plddt"]:
+        # High confidence: 70-100 -> 0.9-1.0
+        plddt_score = 0.9 + 0.1 * ((plddt - 70) / 30)
+    elif plddt >= STRUCTURE_QUALITY_THRESHOLDS["medium_plddt"]:
+        # Medium confidence: 50-70 -> 0.7-0.9
+        plddt_score = 0.7 + 0.2 * ((plddt - 50) / 20)
+    elif plddt >= STRUCTURE_QUALITY_THRESHOLDS["low_plddt"]:
+        # Low confidence: 30-50 -> 0.5-0.7
+        plddt_score = 0.5 + 0.2 * ((plddt - 30) / 20)
+    else:
+        # Very low: 0-30 -> 0.3-0.5
+        plddt_score = 0.3 + 0.2 * (plddt / 30)
+
+    # Convert pTM to 0-1 score
+    # pTM is already 0-1, but we apply similar scaling
+    if ptm is None:
+        ptm_score = 0.8  # Default if missing
+    elif ptm >= STRUCTURE_QUALITY_THRESHOLDS["high_ptm"]:
+        # High confidence: 0.5-1.0 -> 0.85-1.0
+        ptm_score = 0.85 + 0.15 * ((ptm - 0.5) / 0.5)
+    elif ptm >= STRUCTURE_QUALITY_THRESHOLDS["medium_ptm"]:
+        # Medium confidence: 0.3-0.5 -> 0.7-0.85
+        ptm_score = 0.7 + 0.15 * ((ptm - 0.3) / 0.2)
+    else:
+        # Low confidence: 0-0.3 -> 0.5-0.7
+        ptm_score = 0.5 + 0.2 * (ptm / 0.3)
+
+    # Combine pLDDT and pTM (pLDDT is more important for local accuracy)
+    # pLDDT weight 0.7, pTM weight 0.3
+    combined_score = 0.7 * plddt_score + 0.3 * ptm_score
+
+    # Apply MSA depth bonus for ColabFold (high MSA = more reliable)
+    if source == "colabfold" and colabfold_msa_depth:
+        if colabfold_msa_depth >= 1000:
+            combined_score = min(1.0, combined_score * 1.05)  # 5% bonus
+        elif colabfold_msa_depth >= 500:
+            combined_score = min(1.0, combined_score * 1.02)  # 2% bonus
+
+    return combined_score, source
 
 
 def calculate_hit_quality(hit: FoldseekHit) -> float:
@@ -152,14 +288,31 @@ def calculate_hit_quality(hit: FoldseekHit) -> float:
 def score_hit(hit: FoldseekHit, annotation: dict) -> HitScore:
     """Score a hit with its annotation.
 
+    Combines hit quality (e-value, identity, coverage), database weight,
+    annotation quality bonus, and structure quality into a final weighted score.
+
     Args:
         hit: FoldseekHit object
-        annotation: Annotation dict from database
+        annotation: Annotation dict from database (may include structure quality)
 
     Returns:
         HitScore object
     """
-    quality = calculate_hit_quality(hit)
+    # Base quality from alignment metrics
+    alignment_quality = calculate_hit_quality(hit)
+
+    # Structure quality from pLDDT/pTM (if available)
+    structure_quality, structure_source = calculate_structure_quality(annotation)
+
+    # Combine alignment and structure quality
+    # Structure quality affects the score proportionally to STRUCTURE_QUALITY_WEIGHT
+    # Formula: (1 - weight) * alignment + weight * (alignment * structure)
+    # This means structure quality can reduce score by up to STRUCTURE_QUALITY_WEIGHT
+    combined_quality = alignment_quality * (
+        (1 - STRUCTURE_QUALITY_WEIGHT) + STRUCTURE_QUALITY_WEIGHT * structure_quality
+    )
+
+    # Database weight
     db_weight = DATABASE_WEIGHTS.get(hit.source_db, 1.0)
 
     # Bonus for having a real description (not just UniProt ID)
@@ -167,13 +320,48 @@ def score_hit(hit: FoldseekHit, annotation: dict) -> HitScore:
     if desc and "UniProt:" not in desc and "hypothetical" not in desc.lower():
         db_weight *= 1.1  # 10% bonus for real functional annotation
 
-    weighted = quality * db_weight
+    weighted = combined_quality * db_weight
 
     return HitScore(
         hit=hit,
-        quality_score=quality,
+        quality_score=combined_quality,
         weighted_score=weighted,
         annotation=annotation,
+        structure_quality=structure_quality,
+        structure_quality_source=structure_source,
+    )
+
+
+def _build_annotation_evidence(annotation: dict) -> AnnotationEvidence | None:
+    """Build AnnotationEvidence from an annotation dictionary.
+
+    Args:
+        annotation: Annotation dict that may contain pfam, go_bp, go_mf, superfamily
+
+    Returns:
+        AnnotationEvidence object or None if no evidence available
+    """
+    if not annotation:
+        return None
+
+    # Check if any annotation evidence exists
+    has_evidence = any(
+        key in annotation
+        for key in ["pfam", "go_bp", "go_mf", "superfamily", "gene3d"]
+    )
+
+    if not has_evidence:
+        return None
+
+    return AnnotationEvidence(
+        pfam=annotation.get("pfam"),
+        pfam_confidence=annotation.get("pfam_confidence", 0.0),
+        go_bp=annotation.get("go_bp"),
+        go_bp_confidence=annotation.get("go_bp_confidence", 0.0),
+        go_mf=annotation.get("go_mf"),
+        go_mf_confidence=annotation.get("go_mf_confidence", 0.0),
+        superfamily=annotation.get("superfamily"),
+        superfamily_confidence=annotation.get("superfamily_confidence", 0.0),
     )
 
 
@@ -269,10 +457,18 @@ def build_consensus(
     result.primary_annotation = primary_scored.annotation
     result.primary_source = primary_db
 
-    # Classify protein into functional category
-    result.functional_category = classify_protein(
+    # Structure quality from primary hit
+    result.structure_quality_score = primary_scored.structure_quality
+    result.structure_quality_source = primary_scored.structure_quality_source
+
+    # Build AnnotationEvidence from annotation dict for enhanced classification
+    evidence = _build_annotation_evidence(primary_scored.annotation)
+
+    # Classify protein into functional category using enhanced classification
+    result.functional_category, result.classification_source = get_classification_source(
         result.description,
         result.primary_annotation.get("gene"),
+        evidence,
     )
 
     # Check for secondary database
