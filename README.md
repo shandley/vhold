@@ -23,7 +23,7 @@ Traditional sequence-based tools (BLAST, DIAMOND) fail when sequence identity dr
 ### Install
 
 ```bash
-git clone https://github.com/HandleyLab/vhold.git
+git clone https://github.com/shandley/vhold.git
 cd vhold
 pip install -e .
 ```
