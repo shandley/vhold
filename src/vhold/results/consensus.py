@@ -44,6 +44,36 @@ STRUCTURE_QUALITY_THRESHOLDS = {
 # This determines how much structure quality affects the final score
 STRUCTURE_QUALITY_WEIGHT = 0.15  # 15% of total score influenced by structure quality
 
+# Novelty classification based on sequence identity
+# Higher novelty = more value from structural search (BLAST would miss these)
+NOVELTY_THRESHOLDS = {
+    "database_match": 0.95,  # Same protein, different DB entry
+    "close_homolog": 0.70,   # Related strain/variant, BLAST would find
+    "remote_homolog": 0.30,  # Structure-based transfer, BLAST marginal
+    # Below 0.30 = "twilight_zone" - BLAST fails, structure succeeds
+}
+
+
+def classify_hit_novelty(identity: float) -> str:
+    """Classify hit by novelty based on sequence identity.
+
+    Higher novelty = more value from structural search.
+
+    Args:
+        identity: Sequence identity (0-1)
+
+    Returns:
+        Novelty classification string
+    """
+    if identity >= NOVELTY_THRESHOLDS["database_match"]:
+        return "database_match"  # Likely same protein in DB
+    elif identity >= NOVELTY_THRESHOLDS["close_homolog"]:
+        return "close_homolog"   # BLAST would find this
+    elif identity >= NOVELTY_THRESHOLDS["remote_homolog"]:
+        return "remote_homolog"  # Structure-based annotation
+    else:
+        return "twilight_zone"   # Novel structural similarity
+
 
 @dataclass
 class HitScore:
@@ -87,6 +117,9 @@ class ConsensusResult:
     structure_quality_score: float = 1.0  # Structure prediction quality (0-1)
     structure_quality_source: str = "none"  # Source: colabfold, esmfold, bfvd_af2, none
 
+    # Novelty classification (indicates value of structural search)
+    novelty: str = "none"  # database_match, close_homolog, remote_homolog, twilight_zone
+
     # All hits by database
     hits_by_db: dict = field(default_factory=dict)
 
@@ -118,6 +151,7 @@ class ConsensusResult:
             "agreement": self.agreement,
             "functional_category": self.functional_category,
             "classification_source": self.classification_source,
+            "novelty": self.novelty,
             "structure_quality_score": round(self.structure_quality_score, 3),
             "structure_quality_source": self.structure_quality_source,
             "primary_source": self.primary_source,
@@ -460,6 +494,10 @@ def build_consensus(
     # Structure quality from primary hit
     result.structure_quality_score = primary_scored.structure_quality
     result.structure_quality_source = primary_scored.structure_quality_source
+
+    # Novelty classification based on sequence identity
+    # This indicates how much value the structural search provides
+    result.novelty = classify_hit_novelty(primary_scored.hit.fident)
 
     # Build AnnotationEvidence from annotation dict for enhanced classification
     evidence = _build_annotation_evidence(primary_scored.annotation)

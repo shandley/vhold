@@ -48,6 +48,7 @@ CONSENSUS_TSV_COLUMNS = [
     "agreement",
     "functional_category",
     "classification_source",
+    "novelty",
     "structure_quality_score",
     "structure_quality_source",
     "primary_source",
@@ -359,6 +360,13 @@ def write_consensus_summary_json(
             src = ann.structure_quality_source
             structure_source_dist[src] = structure_source_dist.get(src, 0) + 1
 
+    # Novelty distribution (how much value does structural search provide?)
+    novelty_dist: dict[str, int] = {}
+    for ann in annotations.values():
+        if ann.is_annotated:
+            nov = ann.novelty
+            novelty_dist[nov] = novelty_dist.get(nov, 0) + 1
+
     # Analyze dark matter proteins
     dark_matter_report = analyze_dark_matter(annotations)
     dark_matter_summary = get_dark_matter_summary(dark_matter_report)
@@ -380,6 +388,7 @@ def write_consensus_summary_json(
             "confidence_distribution": confidence_dist,
             "agreement_distribution": agreement_dist,
             "category_distribution": category_dist,
+            "novelty_distribution": novelty_dist,
             "primary_source_distribution": source_dist,
             "consensus_score_stats": score_stats,
             "evalue_stats": evalue_stats,
