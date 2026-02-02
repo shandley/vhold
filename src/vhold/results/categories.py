@@ -32,6 +32,8 @@ FUNCTIONAL_CATEGORIES = {
         "nucleocapsid",
         "tegument",
         "baseplate",
+        "assembly",  # Assembly proteins (e.g., MS2 maturation protein)
+        "maturation",  # Maturation proteins
     ],
     "replication": [
         "polymerase",
@@ -75,11 +77,18 @@ FUNCTIONAL_CATEGORIES = {
         "regulator",
         "anti-repressor",
         "antirepressor",
+        "translation enhancer",  # e.g., Rotavirus NSP3
+        "translation effector",  # e.g., Rotavirus NSP3
+        "effector protein",  # General effector proteins
     ],
     "movement": [
         "movement",
         "cell-to-cell",
         "transport protein",
+        "movement protein",
+        "plasmodesmata",  # Plant cell connections
+        "tubule-forming",  # Movement protein characteristic
+        " mp",  # Gene name for movement protein (with space to avoid false matches)
     ],
     "lysis": [
         "lysin",
@@ -136,6 +145,8 @@ PFAM_TO_CATEGORY = {
         "tegument",
         "membrane protein",
         "structural envelope",
+        "assembly protein",  # e.g., MS2 maturation/assembly
+        "maturation protein",
     ],
     # Replication machinery
     "replication": [
@@ -225,6 +236,9 @@ PFAM_TO_CATEGORY = {
         "immediate-early",
         "protein kinase",
         "kinase domain",
+        "translation enhancer",
+        "translation effector",
+        "translation regulation",
     ],
     # Movement (plant viruses)
     "movement": [
