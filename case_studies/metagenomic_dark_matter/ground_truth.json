@@ -1,0 +1,215 @@
+{
+  "name": "palmdb Novel RdRp Palmprints",
+  "description": "RNA-dependent RNA polymerase palmprint sequences discovered from metagenomic data",
+  "source": "palmdb (Babaian & Edgar, 2022)",
+  "publication": "Edgar et al., Nature 2022. Petabase-scale sequence alignment catalyses viral discovery.",
+  "discovery_method": "RdRp-specific HMM search of Sequence Read Archive",
+  "version": "2023-04-24",
+  "notes": [
+    "Palmprints are ~100 aa conserved core sequences from the RdRp palm domain",
+    "Contains motifs A, B, and C that are diagnostic of RdRp activity",
+    "Many sequences have no close match in GenBank/UniProt",
+    "Ground truth: ALL sequences ARE RdRps (discovered by RdRp HMM)",
+    "Success = vHold finds RdRp structural homologs"
+  ],
+  "expected_annotations": {
+    "functional_category": "replication",
+    "description_keywords": ["polymerase", "RdRp", "replicase", "RNA-dependent"],
+    "structural_features": ["palm domain", "catalytic site", "polymerase fold"]
+  },
+  "proteins": {
+    "u1000001": {
+      "length": 141,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome",
+      "notes": "Novel RdRp palmprint from metagenomic assembly"
+    },
+    "u1032785": {
+      "length": 103,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u1066343": {
+      "length": 140,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u128759": {
+      "length": 119,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u156006": {
+      "length": 107,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u186068": {
+      "length": 101,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u213630": {
+      "length": 90,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u240718": {
+      "length": 98,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u268052": {
+      "length": 100,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u303133": {
+      "length": 107,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u337315": {
+      "length": 93,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u368694": {
+      "length": 110,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u399201": {
+      "length": 106,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u429719": {
+      "length": 92,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u461712": {
+      "length": 134,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u496343": {
+      "length": 95,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u527246": {
+      "length": 115,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u561683": {
+      "length": 119,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u600937": {
+      "length": 118,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u636170": {
+      "length": 95,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u674896": {
+      "length": 124,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u712225": {
+      "length": 96,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u748909": {
+      "length": 105,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u782247": {
+      "length": 98,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u814468": {
+      "length": 110,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u845130": {
+      "length": 107,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u872857": {
+      "length": 117,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u902074": {
+      "length": 98,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u935013": {
+      "length": 126,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    },
+    "u969390": {
+      "length": 99,
+      "expected_category": "replication",
+      "expected_function": "RNA-dependent RNA polymerase",
+      "source": "metagenome"
+    }
+  },
+  "summary": {
+    "total_proteins": 30,
+    "expected_category": "replication",
+    "length_range": "90-141 aa",
+    "mean_length": 109
+  },
+  "success_criteria": {
+    "annotation_rate": "Percentage of sequences with vHold hits",
+    "correct_category": "Percentage classified as 'replication'",
+    "rdrp_keywords": "Percentage with RdRp/polymerase in description",
+    "novelty_level": "Distribution across novelty bins (expect remote_homolog or twilight_zone)"
+  }
+}
