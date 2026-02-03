@@ -8,7 +8,7 @@ This document tracks potential case studies for future development.
 |---|------|---------|--------|
 | 1 | SARS-CoV-2 | Pipeline validation | Complete |
 | 2 | Remote Homology | Demonstrate low-identity annotation | Complete |
-| 3 | Metagenomic Dark Matter | Novel protein discovery (palmdb) | In Progress |
+| 3 | Metagenomic Dark Matter | Novel protein discovery (palmdb) | Complete |
 
 ## Planned Future Case Studies
 

@@ -8,7 +8,7 @@ This directory contains worked examples demonstrating vHold's annotation capabil
 |---|------|---------|----------|--------|
 | 1 | [SARS-CoV-2](sars_cov_2/) | Pipeline validation | 18 | Complete |
 | 2 | [Remote Homology](remote_homology/) | Demonstrate annotation at low identity | 10 | Complete |
-| 3 | Metagenomic Dark Matter | Annotate truly unknown proteins | TBD | Planned |
+| 3 | [Metagenomic Dark Matter](metagenomic_dark_matter/) | Annotate truly unknown proteins | 30 | Complete |
 
 ## Key Learnings
 
@@ -66,19 +66,22 @@ Viro3D (540 hits): 91.7% twilight | 8.1% remote | 0% moderate    | 0.2% easy
 
 [Full documentation](remote_homology/README.md)
 
-## Case Study 3: Metagenomic Dark Matter (Planned)
+## Case Study 3: Metagenomic Dark Matter
 
-**Purpose**: Demonstrate discovery of new biology by annotating truly unknown proteins.
+**Purpose**: Demonstrate vHold's ability to annotate truly novel proteins from metagenomes that have no close sequence homologs.
 
-**Approach**:
-- Use proteins NOT in BFVD or Viro3D (metagenomic ORFans)
-- Find structural homologs with known function
-- Transfer function to unknown proteins
+**Data Source**: palmdb - 513K RdRp "palmprint" sequences discovered from petabase-scale metagenomic mining (Edgar et al., Nature 2022).
 
-**Sources**:
-- Serratus/palmdb novel RNA viruses
-- IMG/VR uncultivated viral genomes
-- Recent phage discoveries not yet in UniProt
+**Key Results**:
+- 25/30 proteins annotated (83.3%)
+- 21/30 correctly classified as "replication" (70%)
+- 84% of annotated proteins have RdRp keywords
+- 72% of hits at remote_homolog level (30-70% identity)
+- Mean identity: 53% - well beyond BLAST sensitivity
+
+**Key Finding**: vHold successfully transfers RdRp function from structural homologs to novel metagenomic sequences. The 5 unannotated sequences represent true "dark matter" - proteins too divergent even for structural search.
+
+[Full documentation](metagenomic_dark_matter/README.md)
 
 ## Running Case Studies
 
