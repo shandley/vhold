@@ -9,6 +9,7 @@ This directory contains worked examples demonstrating vHold's annotation capabil
 | 1 | [SARS-CoV-2](sars_cov_2/) | Pipeline validation | 18 | Complete |
 | 2 | [Remote Homology](remote_homology/) | Demonstrate annotation at low identity | 10 | Complete |
 | 3 | [Metagenomic Dark Matter](metagenomic_dark_matter/) | Annotate truly unknown proteins | 30 | Complete |
+| 4 | [crAssphage ORFans](crass_phage_orfans/) | Annotate unknown gut phage proteins | 37 | Running |
 
 ## Key Learnings
 
