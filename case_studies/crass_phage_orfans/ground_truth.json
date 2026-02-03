@@ -1,0 +1,237 @@
+{
+  "name": "crAssphage ORFans",
+  "description": "Proteins from crAssphage (NC_024711), the most abundant virus in the human gut",
+  "source": "NCBI NC_024711.1 (Carjivirus communis)",
+  "references": [
+    "Dutilh et al. (2014). A highly abundant bacteriophage discovered in the unknown sequences of human faecal metagenomes. Nature Communications 5:4498",
+    "Yutin et al. (2018). Discovery of an expansive bacteriophage family that includes the most abundant viruses from the human gut. Nature Microbiology 3:38-46",
+    "Structural atlas of a human gut crassvirus. Nature 2023. DOI: 10.1038/s41586-023-06019-2",
+    "Shkoporov et al. (2018). ΦCrAss001 represents the most abundant bacteriophage family in the human gut and infects Bacteroides intestinalis."
+  ],
+  "notes": [
+    "crAssphage was discovered in 2014 from metagenomic data",
+    "~86% of proteins were originally annotated as 'hypothetical'",
+    "2023 Nature paper provided cryo-EM structure and mass spec characterization",
+    "Ground truth combines NCBI annotations + literature characterization"
+  ],
+  "expected_annotations": {
+    "structural_proteins": ["gp58", "gp59", "gp60", "gp73", "gp74", "gp75", "gp76", "gp77"],
+    "replication_proteins": ["gp12", "gp14", "gp23", "gp25", "gp29", "gp72"],
+    "transcription_proteins": ["gp47", "gp49", "gp50"],
+    "nuclease_proteins": ["gp13", "gp22", "gp30"],
+    "packaging_proteins": ["gp61"],
+    "lysis_proteins": ["gp73"]
+  },
+  "proteins": {
+    "gp12": {
+      "length": 486,
+      "ncbi_annotation": "putative DNA helicase",
+      "expected_category": "replication",
+      "expected_function": "DNA helicase",
+      "evidence": "sequence homology",
+      "notes": "Replicative helicase"
+    },
+    "gp13": {
+      "length": 184,
+      "ncbi_annotation": "putative uracil-DNA glycosylase",
+      "expected_category": "nuclease",
+      "expected_function": "uracil-DNA glycosylase",
+      "evidence": "sequence homology",
+      "notes": "DNA repair enzyme"
+    },
+    "gp14": {
+      "length": 775,
+      "ncbi_annotation": "putative DNA polymerase",
+      "expected_category": "replication",
+      "expected_function": "DNA polymerase",
+      "evidence": "sequence homology",
+      "notes": "Main replicative polymerase"
+    },
+    "gp22": {
+      "length": 405,
+      "ncbi_annotation": "putative DNA ligase",
+      "expected_category": "nuclease",
+      "expected_function": "DNA ligase",
+      "evidence": "sequence homology",
+      "notes": "DNA repair/replication"
+    },
+    "gp23": {
+      "length": 271,
+      "ncbi_annotation": "putative deoxynucleoside monophosphate kinase",
+      "expected_category": "replication",
+      "expected_function": "dNMP kinase",
+      "evidence": "sequence homology",
+      "notes": "Nucleotide metabolism"
+    },
+    "gp25": {
+      "length": 289,
+      "ncbi_annotation": "putative thymidylate synthase complementing protein ThyX",
+      "expected_category": "replication",
+      "expected_function": "thymidylate synthase",
+      "evidence": "sequence homology",
+      "notes": "Nucleotide biosynthesis"
+    },
+    "gp29": {
+      "length": 106,
+      "ncbi_annotation": "putative dUTP diphosphatase",
+      "expected_category": "replication",
+      "expected_function": "dUTPase",
+      "evidence": "sequence homology",
+      "notes": "Prevents dUTP incorporation"
+    },
+    "gp30": {
+      "length": 284,
+      "ncbi_annotation": "putative endonuclease",
+      "expected_category": "nuclease",
+      "expected_function": "endonuclease",
+      "evidence": "sequence homology",
+      "notes": "DNA processing"
+    },
+    "gp45": {
+      "length": 309,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "unknown",
+      "expected_function": "cargo protein 1",
+      "evidence": "mass spectrometry (Nature 2023)",
+      "notes": "Virion-associated cargo protein detected by MS"
+    },
+    "gp46": {
+      "length": 320,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "unknown",
+      "expected_function": "cargo protein 2",
+      "evidence": "mass spectrometry (Nature 2023)",
+      "notes": "Virion-associated cargo protein detected by MS"
+    },
+    "gp47": {
+      "length": 234,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "transcription",
+      "expected_function": "RNA polymerase subunit",
+      "evidence": "mass spectrometry + structure (Nature 2023)",
+      "notes": "Part of virion-packaged RNAP complex, 262.5 kDa"
+    },
+    "gp49": {
+      "length": 479,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "transcription",
+      "expected_function": "RNA polymerase subunit",
+      "evidence": "mass spectrometry (Nature 2023)",
+      "notes": "RNAP-associated protein, 154.5 kDa"
+    },
+    "gp50": {
+      "length": 167,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "transcription",
+      "expected_function": "virion RNA polymerase",
+      "evidence": "mass spectrometry + structure (Nature 2023)",
+      "notes": "Main RNAP subunit, 276.9 kDa, DFDxD motif"
+    },
+    "gp58": {
+      "length": 1294,
+      "ncbi_annotation": "putative structural protein",
+      "expected_category": "structural",
+      "expected_function": "tail tube protein",
+      "evidence": "cryo-EM structure (Nature 2023)",
+      "notes": "Major tail structural protein"
+    },
+    "gp59": {
+      "length": 267,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "structural",
+      "expected_function": "tail protein",
+      "evidence": "mass spectrometry (Nature 2023)",
+      "notes": "Tail component"
+    },
+    "gp60": {
+      "length": 696,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "structural",
+      "expected_function": "tail protein",
+      "evidence": "mass spectrometry (Nature 2023)",
+      "notes": "Tail component"
+    },
+    "gp61": {
+      "length": 868,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "packaging",
+      "expected_function": "portal protein",
+      "evidence": "cryo-EM structure (Nature 2023)",
+      "notes": "DNA packaging portal"
+    },
+    "gp64": {
+      "length": 177,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "unknown",
+      "expected_function": "BACON domain protein",
+      "evidence": "domain analysis (PMC6949934)",
+      "notes": "8 tandem BACON domains, unique to crAssphage, carbohydrate binding"
+    },
+    "gp72": {
+      "length": 128,
+      "ncbi_annotation": "putative DNA helicase",
+      "expected_category": "replication",
+      "expected_function": "DNA helicase",
+      "evidence": "sequence homology",
+      "notes": "Secondary helicase"
+    },
+    "gp73": {
+      "length": 142,
+      "ncbi_annotation": "putative N-acetylmuramidase",
+      "expected_category": "structural",
+      "expected_function": "minor capsid protein / lysozyme",
+      "evidence": "cryo-EM structure (Nature 2023)",
+      "notes": "Also has N-acetylmuramidase activity for lysis"
+    },
+    "gp74": {
+      "length": 116,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "structural",
+      "expected_function": "major capsid protein",
+      "evidence": "cryo-EM structure (Nature 2023)",
+      "notes": "Main capsid building block"
+    },
+    "gp75": {
+      "length": 335,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "structural",
+      "expected_function": "head decoration protein",
+      "evidence": "cryo-EM structure (Nature 2023)",
+      "notes": "Capsid decoration/stabilization"
+    },
+    "gp76": {
+      "length": 191,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "structural",
+      "expected_function": "head fiber protein",
+      "evidence": "cryo-EM structure (Nature 2023)",
+      "notes": "Head fibers for host recognition"
+    },
+    "gp77": {
+      "length": 188,
+      "ncbi_annotation": "hypothetical protein",
+      "expected_category": "structural",
+      "expected_function": "vertex protein",
+      "evidence": "cryo-EM structure (Nature 2023)",
+      "notes": "Capsid vertex component"
+    }
+  },
+  "orfans": {
+    "description": "Proteins with no functional annotation - true ORFans",
+    "proteins": ["gp02", "gp16", "gp21", "gp28", "gp33", "gp36", "gp40", "gp41", "gp48", "gp53", "gp57", "gp69", "gp80"],
+    "expected_vhold_outcome": "Find structural homologs to assign function"
+  },
+  "summary": {
+    "total_proteins": 37,
+    "with_literature_annotation": 24,
+    "true_orfans": 13,
+    "length_range": "54-1957 aa",
+    "mean_length": 385
+  },
+  "success_criteria": {
+    "annotation_rate": "Percentage of proteins with vHold hits (target: >60%)",
+    "category_accuracy": "Percentage of annotated proteins with correct category (target: >50%)",
+    "orfan_discovery": "Percentage of true ORFans with new functional predictions",
+    "structural_proteins": "Correctly identify capsid/tail proteins as structural"
+  }
+}
