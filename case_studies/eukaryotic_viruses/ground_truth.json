@@ -1,0 +1,241 @@
+{
+  "name": "Eukaryotic Virus Proteins",
+  "description": "Diverse proteins from mammalian viruses (Paramyxoviridae, Filoviridae, Rhabdoviridae, Coronaviridae)",
+  "total_proteins": 29,
+  "proteins": {
+    "NP_112021.1": {
+      "virus": "Nipah virus",
+      "gene": "N",
+      "function": "nucleocapsid protein",
+      "category": "structural",
+      "notes": "RNA binding, encapsidation"
+    },
+    "NP_112023.1": {
+      "virus": "Nipah virus",
+      "gene": "V",
+      "function": "V protein",
+      "category": "regulatory",
+      "notes": "Interferon antagonist, immune evasion"
+    },
+    "NP_112024.1": {
+      "virus": "Nipah virus",
+      "gene": "C",
+      "function": "C protein",
+      "category": "regulatory",
+      "notes": "Interferon antagonist, accessory protein"
+    },
+    "NP_112025.1": {
+      "virus": "Nipah virus",
+      "gene": "M",
+      "function": "matrix protein",
+      "category": "structural",
+      "notes": "Virion assembly, budding"
+    },
+    "NP_112026.1": {
+      "virus": "Nipah virus",
+      "gene": "F",
+      "function": "fusion protein",
+      "category": "structural",
+      "notes": "Membrane fusion, class I fusion protein"
+    },
+    "NP_112027.1": {
+      "virus": "Nipah virus",
+      "gene": "G",
+      "function": "attachment glycoprotein",
+      "category": "structural",
+      "notes": "Receptor binding (ephrin-B2/B3)"
+    },
+    "NP_047111.2": {
+      "virus": "Hendra virus",
+      "gene": "F",
+      "function": "fusion protein",
+      "category": "structural",
+      "notes": "Membrane fusion"
+    },
+    "NP_047109.1": {
+      "virus": "Hendra virus",
+      "gene": "C",
+      "function": "C protein",
+      "category": "regulatory",
+      "notes": "Accessory protein"
+    },
+    "NP_056918.1": {
+      "virus": "Measles virus",
+      "gene": "N",
+      "function": "nucleocapsid protein",
+      "category": "structural",
+      "notes": "RNA encapsidation"
+    },
+    "YP_003873249.2": {
+      "virus": "Measles virus",
+      "gene": "V",
+      "function": "V protein",
+      "category": "regulatory",
+      "notes": "Interferon antagonist"
+    },
+    "NP_056922.1": {
+      "virus": "Measles virus",
+      "gene": "F",
+      "function": "fusion protein",
+      "category": "structural",
+      "notes": "Class I fusion protein"
+    },
+    "NP_066243.1": {
+      "virus": "Ebola virus",
+      "gene": "NP",
+      "function": "nucleoprotein",
+      "category": "structural",
+      "notes": "Major structural protein"
+    },
+    "NP_066244.1": {
+      "virus": "Ebola virus",
+      "gene": "VP35",
+      "function": "polymerase cofactor",
+      "category": "replication",
+      "notes": "Interferon antagonist, polymerase cofactor"
+    },
+    "NP_066245.1": {
+      "virus": "Ebola virus",
+      "gene": "VP40",
+      "function": "matrix protein",
+      "category": "structural",
+      "notes": "Budding, filament formation"
+    },
+    "NP_066246.1": {
+      "virus": "Ebola virus",
+      "gene": "GP",
+      "function": "spike glycoprotein",
+      "category": "structural",
+      "notes": "Receptor binding, membrane fusion"
+    },
+    "NP_066249.1": {
+      "virus": "Ebola virus",
+      "gene": "VP30",
+      "function": "transcription activator",
+      "category": "regulatory",
+      "notes": "Transcription initiation"
+    },
+    "NP_066250.1": {
+      "virus": "Ebola virus",
+      "gene": "VP24",
+      "function": "secondary matrix protein",
+      "category": "structural",
+      "notes": "Nucleocapsid maturation, immune evasion"
+    },
+    "NP_056793.1": {
+      "virus": "Rabies virus",
+      "gene": "N",
+      "function": "nucleoprotein",
+      "category": "structural",
+      "notes": "RNA encapsidation"
+    },
+    "NP_056795.1": {
+      "virus": "Rabies virus",
+      "gene": "M",
+      "function": "matrix protein",
+      "category": "structural",
+      "notes": "Virion assembly"
+    },
+    "NP_056796.1": {
+      "virus": "Rabies virus",
+      "gene": "G",
+      "function": "glycoprotein",
+      "category": "structural",
+      "notes": "Receptor binding, membrane fusion"
+    },
+    "NP_041713.1": {
+      "virus": "VSV",
+      "gene": "NS",
+      "function": "phosphoprotein",
+      "category": "replication",
+      "notes": "Polymerase cofactor"
+    },
+    "NP_041714.1": {
+      "virus": "VSV",
+      "gene": "M",
+      "function": "matrix protein",
+      "category": "structural",
+      "notes": "Budding, host shutoff"
+    },
+    "NP_941977.1": {
+      "virus": "Hantaan virus",
+      "gene": "N",
+      "function": "nucleocapsid protein",
+      "category": "structural",
+      "notes": "NCBI: hypothetical protein - good ORFan test"
+    },
+    "NP_941978.1": {
+      "virus": "Hantaan virus",
+      "gene": "GPC",
+      "function": "glycoprotein precursor",
+      "category": "structural",
+      "notes": "NCBI: hypothetical protein - good ORFan test"
+    },
+    "NP_690589.2": {
+      "virus": "Chikungunya",
+      "gene": "structural",
+      "function": "structural polyprotein",
+      "category": "structural",
+      "notes": "C-E3-E2-6K-E1 polyprotein"
+    },
+    "YP_009047202.1": {
+      "virus": "MERS-CoV",
+      "gene": "S",
+      "function": "spike protein",
+      "category": "structural",
+      "notes": "Receptor binding (DPP4)"
+    },
+    "YP_009047207.1": {
+      "virus": "MERS-CoV",
+      "gene": "M",
+      "function": "membrane protein",
+      "category": "structural",
+      "notes": "Virion assembly"
+    },
+    "YP_009047208.1": {
+      "virus": "MERS-CoV",
+      "gene": "N",
+      "function": "nucleocapsid protein",
+      "category": "structural",
+      "notes": "RNA packaging"
+    },
+    "NP_059433.1": {
+      "virus": "Dengue virus 1",
+      "gene": "polyprotein",
+      "function": "polyprotein",
+      "category": "unknown",
+      "notes": "Cleaved into C, prM, E, NS1-NS5"
+    }
+  },
+  "virus_families": {
+    "Paramyxoviridae": [
+      "Nipah virus",
+      "Hendra virus",
+      "Measles virus"
+    ],
+    "Filoviridae": [
+      "Ebola virus"
+    ],
+    "Rhabdoviridae": [
+      "Rabies virus",
+      "VSV"
+    ],
+    "Hantaviridae": [
+      "Hantaan virus"
+    ],
+    "Togaviridae": [
+      "Chikungunya"
+    ],
+    "Coronaviridae": [
+      "MERS-CoV"
+    ],
+    "Flaviviridae": [
+      "Dengue virus 1"
+    ]
+  },
+  "expected_categories": {
+    "structural": "Capsid, envelope, matrix proteins",
+    "regulatory": "Accessory proteins, immune evasion",
+    "replication": "Polymerase cofactors"
+  }
+}
