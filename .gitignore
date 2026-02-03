@@ -51,5 +51,9 @@ test_output_real/
 case_studies/*/results/
 !case_studies/*/results/.gitkeep
 
+# Large data files
+case_studies/metagenomic_dark_matter/sotus.palmprint.faa*
+case_studies/metagenomic_dark_matter/label_sotu.tsv
+
 # Lock files
 uv.lock
