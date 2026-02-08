@@ -218,9 +218,12 @@ def check_databases(db_dir: Path | None = None) -> dict[str, bool]:
 
     db_dir = Path(db_dir)
 
+    from vhold.utils.constants import EMBEDDING_DB_FILE
+
     return {
         "bfvd": (db_dir / "bfvd" / "bfvd_metadata.tsv").exists(),
         "viro3d": (db_dir / "viro3d" / "viro3d_metadata.tsv").exists(),
+        "embeddings": (db_dir / "embeddings" / EMBEDDING_DB_FILE).exists(),
     }
 
 
@@ -258,6 +261,7 @@ def install_databases(
     database_dir: str | Path | None = None,
     install_bfvd: bool = True,
     install_viro3d: bool = True,
+    install_embeddings: bool = False,
     force: bool = False,
 ) -> None:
     """Install databases for vhold.
@@ -266,6 +270,7 @@ def install_databases(
         database_dir: Directory to install databases (default: ~/.vhold/databases)
         install_bfvd: Whether to install BFVD
         install_viro3d: Whether to install Viro3D
+        install_embeddings: Whether to install embedding database for triage
         force: Force re-download even if files exist
     """
     setup_logging()
@@ -278,7 +283,7 @@ def install_databases(
     db_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Installing databases to {db_dir}")
 
-    if not install_bfvd and not install_viro3d:
+    if not install_bfvd and not install_viro3d and not install_embeddings:
         logger.warning("No databases selected for installation")
         return
 
@@ -291,6 +296,11 @@ def install_databases(
         logger.info("Installing Viro3D database...")
         from vhold.databases.install import install_viro3d as _install_viro3d
         _install_viro3d(db_dir, force=force)
+
+    if install_embeddings:
+        logger.info("Installing embedding database...")
+        from vhold.databases.embeddings import install_embedding_db
+        install_embedding_db(db_dir, force=force)
 
     logger.info("Database installation complete!")
 

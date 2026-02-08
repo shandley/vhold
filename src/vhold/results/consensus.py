@@ -125,8 +125,8 @@ class ConsensusResult:
 
     @property
     def is_annotated(self) -> bool:
-        """Check if any annotation exists."""
-        return self.primary_hit is not None
+        """Check if any annotation exists (Foldseek hit or embedding match)."""
+        return self.primary_hit is not None or bool(self.primary_annotation)
 
     @property
     def description(self) -> str:

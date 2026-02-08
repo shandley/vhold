@@ -30,6 +30,8 @@ def run_pipeline(
     fast: bool = False,
     llm_classify: bool = False,
     llm_model: str = "claude-haiku-4-5-20251001",
+    triage: bool = False,
+    triage_threshold: float = 0.95,
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -78,6 +80,8 @@ def run_pipeline(
         "evalue": evalue,
         "sensitivity": sensitivity,
         "confidence_threshold": confidence_threshold,
+        "triage": triage,
+        "triage_threshold": triage_threshold,
     }
 
     # ========================================
@@ -97,27 +101,103 @@ def run_pipeline(
     logger.info("")
 
     # ========================================
+    # Step 1b: Embedding-based triage (optional)
+    # ========================================
+    triage_annotations = {}
+    sequences_for_decoder = seq_dict
+    shared_model = None
+    shared_tokenizer = None
+
+    if triage:
+        from vhold.databases.embeddings import check_embedding_db, get_embedding_db_path
+        from vhold.features.embeddings import (
+            EmbeddingDatabase,
+            build_embedding_consensus_results,
+            triage_proteins,
+        )
+
+        if check_embedding_db(db_dir):
+            logger.info("Step 1b: Embedding-based triage...")
+            emb_db_path = get_embedding_db_path(db_dir)
+            emb_db = EmbeddingDatabase(emb_db_path)
+            emb_db.load()
+
+            triage_result, extractor = triage_proteins(
+                sequences=seq_dict,
+                embedding_db=emb_db,
+                device=device,
+                model_dir=Path(model_dir) if model_dir else None,
+                threshold=triage_threshold,
+            )
+
+            logger.info(
+                f"Triage: {triage_result.stats['matched']} matched, "
+                f"{triage_result.stats['unmatched']} need full pipeline"
+            )
+
+            # Build ConsensusResults for matched proteins
+            if triage_result.matched:
+                triage_annotations = build_embedding_consensus_results(
+                    matches=triage_result.matched,
+                    query_lengths=seq_lengths,
+                    db_dir=db_dir,
+                )
+
+            # Save model/tokenizer for reuse by ProstT5Predictor
+            shared_model = extractor.model
+            shared_tokenizer = extractor.tokenizer
+
+            # Only run decoder on unmatched proteins
+            sequences_for_decoder = {
+                sid: seq for sid, seq in seq_dict.items()
+                if sid in set(triage_result.unmatched)
+            }
+            logger.info("")
+        else:
+            logger.warning(
+                "Embedding database not installed. "
+                "Run 'vhold install --embeddings' to enable triage. "
+                "Continuing with full pipeline."
+            )
+            logger.info("")
+
+    # ========================================
     # Step 2: Predict 3Di sequences
     # ========================================
-    logger.info("Step 2: Predicting 3Di sequences with ProstT5...")
     predictions_dir = output_path / "predictions"
     predictions_dir.mkdir(parents=True, exist_ok=True)
 
-    predictor = ProstT5Predictor(
-        device=device,
-        model_dir=Path(model_dir) if model_dir else None,
-        fast=fast,
-    )
+    if not sequences_for_decoder:
+        logger.info("Step 2: Skipped (all proteins matched by embedding triage)")
+        results = {}
+    else:
+        logger.info(
+            f"Step 2: Predicting 3Di sequences for "
+            f"{len(sequences_for_decoder)} proteins with ProstT5..."
+        )
 
-    results = predictor.predict_batch(
-        seq_dict,
-        batch_size=batch_size,
-        show_progress=True,
-    )
+        predictor = ProstT5Predictor(
+            device=device,
+            model_dir=Path(model_dir) if model_dir else None,
+            fast=fast,
+        )
 
-    # Save AA sequences for Foldseek
+        # Reuse model from triage if available
+        if shared_model is not None:
+            predictor.model = shared_model
+            predictor.tokenizer = shared_tokenizer
+            predictor._loaded = True
+            logger.info("Reusing model from embedding triage")
+
+        results = predictor.predict_batch(
+            sequences_for_decoder,
+            batch_size=batch_size,
+            show_progress=True,
+        )
+
+    # Save AA sequences for Foldseek (only those that went through decoder)
     aa_fasta = predictions_dir / "aa_sequences.fasta"
-    write_fasta(seq_dict, aa_fasta)
+    write_fasta(sequences_for_decoder, aa_fasta)
 
     # Save 3Di sequences
     raw_3di = {seq_id: result.three_di_sequence for seq_id, result in results.items()}
@@ -132,57 +212,91 @@ def run_pipeline(
     three_di_fasta = predictions_dir / "3di_sequences_masked.fasta"
     write_3di_fasta(masked_3di, three_di_fasta)
 
-    mean_conf = sum(r.mean_confidence for r in results.values()) / len(results)
-    logger.info(f"Mean prediction confidence: {mean_conf:.4f}")
+    if results:
+        mean_conf = sum(r.mean_confidence for r in results.values()) / len(results)
+        logger.info(f"Mean prediction confidence: {mean_conf:.4f}")
     logger.info("")
 
     # ========================================
     # Step 3: Search against databases
     # ========================================
-    logger.info("Step 3: Searching against reference databases...")
-    search_dir = output_path / "foldseek"
-    search_dir.mkdir(parents=True, exist_ok=True)
+    annotations = {}
 
-    search_results = search_databases(
-        aa_fasta=aa_fasta,
-        three_di_fasta=three_di_fasta,
-        output_dir=search_dir,
-        databases=databases,
-        db_dir=db_dir,
-        threads=threads,
-        evalue=evalue,
-        sensitivity=sensitivity,
-    )
+    if sequences_for_decoder:
+        logger.info("Step 3: Searching against reference databases...")
+        search_dir = output_path / "foldseek"
+        search_dir.mkdir(parents=True, exist_ok=True)
 
-    # Merge results
-    merged_results = merge_results(search_results, keep_best=False)
-    logger.info(f"Total hits: {len(merged_results)}")
+        search_results = search_databases(
+            aa_fasta=aa_fasta,
+            three_di_fasta=three_di_fasta,
+            output_dir=search_dir,
+            databases=databases,
+            db_dir=db_dir,
+            threads=threads,
+            evalue=evalue,
+            sensitivity=sensitivity,
+        )
 
-    # Get best hits
-    best_results = merge_results(search_results, keep_best=True)
-    logger.info(f"Proteins with hits: {len(best_results)}")
-    logger.info("")
+        # Merge results
+        merged_results = merge_results(search_results, keep_best=False)
+        logger.info(f"Total hits: {len(merged_results)}")
+
+        # Get best hits
+        best_results = merge_results(search_results, keep_best=True)
+        logger.info(f"Proteins with hits: {len(best_results)}")
+        logger.info("")
+
+        # ========================================
+        # Step 4: Transfer annotations (with consensus)
+        # ========================================
+        logger.info("Step 4: Transferring annotations with multi-database consensus...")
+
+        # Parse hits
+        hits = parse_dataframe_results(merged_results)
+
+        # Transfer annotations using consensus scoring
+        # Use only the lengths of proteins that went through the decoder
+        decoder_lengths = {
+            sid: length for sid, length in seq_lengths.items()
+            if sid in sequences_for_decoder
+        }
+        annotations = transfer_annotations_consensus(
+            hits=hits,
+            query_lengths=decoder_lengths,
+            db_dir=db_dir,
+        )
+
+        # Count Foldseek results
+        annotated_foldseek = sum(1 for a in annotations.values() if a.is_annotated)
+        with_consensus = sum(1 for a in annotations.values() if a.has_consensus)
+        logger.info(f"Annotated (Foldseek): {annotated_foldseek}/{len(annotations)} proteins")
+        logger.info(f"Multi-database agreement: {with_consensus}/{annotated_foldseek} proteins")
+        logger.info("")
+    else:
+        logger.info("Step 3-4: Skipped (all proteins matched by embedding triage)")
+        logger.info("")
 
     # ========================================
-    # Step 4: Transfer annotations (with consensus)
+    # Step 4a: Merge embedding triage results
     # ========================================
-    logger.info("Step 4: Transferring annotations with multi-database consensus...")
+    if triage_annotations:
+        for query_id, consensus in triage_annotations.items():
+            annotations[query_id] = consensus
+        logger.info(f"Merged {len(triage_annotations)} embedding-matched annotations")
+        logger.info("")
 
-    # Parse hits
-    hits = parse_dataframe_results(merged_results)
+    # Ensure all query proteins have an entry (even if unannotated)
+    from vhold.results.consensus import ConsensusResult
+    for query_id, length in seq_lengths.items():
+        if query_id not in annotations:
+            annotations[query_id] = ConsensusResult(
+                query_id=query_id, query_length=length
+            )
 
-    # Transfer annotations using consensus scoring
-    annotations = transfer_annotations_consensus(
-        hits=hits,
-        query_lengths=seq_lengths,
-        db_dir=db_dir,
-    )
-
-    # Count results
+    # Count total results
     annotated = sum(1 for a in annotations.values() if a.is_annotated)
-    with_consensus = sum(1 for a in annotations.values() if a.has_consensus)
-    logger.info(f"Annotated: {annotated}/{len(annotations)} proteins")
-    logger.info(f"Multi-database agreement: {with_consensus}/{annotated} proteins")
+    logger.info(f"Total annotated: {annotated}/{len(annotations)} proteins")
     logger.info("")
 
     # ========================================
@@ -226,9 +340,16 @@ def run_pipeline(
 
     # Print summary statistics
     annotation_rate = annotated / len(annotations) * 100 if annotations else 0
+    with_consensus = sum(1 for a in annotations.values() if a.has_consensus)
     consensus_rate = with_consensus / annotated * 100 if annotated else 0
+    embedding_matched = sum(
+        1 for a in annotations.values() if a.novelty == "embedding_match"
+    )
     logger.info("Summary:")
     logger.info(f"  Total proteins: {len(annotations)}")
     logger.info(f"  Annotated: {annotated} ({annotation_rate:.1f}%)")
+    if embedding_matched:
+        logger.info(f"  Embedding triage: {embedding_matched}")
+        logger.info(f"  Structural search: {annotated - embedding_matched}")
     logger.info(f"  Multi-DB consensus: {with_consensus} ({consensus_rate:.1f}% of annotated)")
     logger.info(f"  Unannotated: {len(annotations) - annotated}")

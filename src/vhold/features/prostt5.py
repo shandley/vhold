@@ -74,6 +74,23 @@ def get_device(device_str: str = "auto") -> torch.device:
     return torch.device(device_str)
 
 
+def prepare_prostt5_sequence(sequence: str) -> str:
+    """Prepare an amino acid sequence for ProstT5 input.
+
+    Replaces rare/ambiguous amino acids with X, adds spaces between
+    residues, and prepends the AA2fold prefix for translation.
+
+    Args:
+        sequence: Amino acid sequence
+
+    Returns:
+        Formatted sequence with AA2fold prefix and spaces
+    """
+    sequence = re.sub(r"[UZOB]", "X", sequence.upper())
+    spaced = " ".join(list(sequence))
+    return f"<AA2fold> {spaced}"
+
+
 class ProstT5Predictor:
     """ProstT5 model for predicting 3Di structural sequences.
 
@@ -183,12 +200,7 @@ class ProstT5Predictor:
         Returns:
             Formatted sequence with AA2fold prefix and spaces
         """
-        # Replace rare/ambiguous amino acids with X
-        sequence = re.sub(r"[UZOB]", "X", sequence.upper())
-        # Add spaces between amino acids
-        spaced = " ".join(list(sequence))
-        # Add the AA2fold prefix for amino acid to 3Di translation
-        return f"<AA2fold> {spaced}"
+        return prepare_prostt5_sequence(sequence)
 
     def _calculate_confidence_scores(
         self,

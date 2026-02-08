@@ -39,7 +39,12 @@ def main():
     default=False,
     help="Force re-download even if files exist",
 )
-def install(database, bfvd, viro3d, force):
+@click.option(
+    "--embeddings/--no-embeddings",
+    default=False,
+    help="Download embedding database for triage mode",
+)
+def install(database, bfvd, viro3d, force, embeddings):
     """Download and install reference databases.
 
     Downloads BFVD and Viro3D Foldseek databases and metadata files
@@ -50,6 +55,7 @@ def install(database, bfvd, viro3d, force):
         database_dir=database,
         install_bfvd=bfvd,
         install_viro3d=viro3d,
+        install_embeddings=embeddings,
         force=force,
     )
 
@@ -281,10 +287,21 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     default="claude-haiku-4-5-20251001",
     help="Model for LLM classification (default: claude-haiku-4-5-20251001)",
 )
+@click.option(
+    "--triage/--no-triage",
+    default=False,
+    help="Use embedding triage to skip decoder for known proteins (requires embedding DB)",
+)
+@click.option(
+    "--triage-threshold",
+    default=0.95,
+    type=float,
+    help="Cosine similarity threshold for embedding triage (default: 0.95)",
+)
 def run(
     input_file, output, database, databases, threads, batch_size, device,
     evalue, sensitivity, confidence_threshold, model_dir, prefix,
-    fast, llm_classify, llm_model,
+    fast, llm_classify, llm_model, triage, triage_threshold,
 ):
     """Run the full vhold annotation pipeline.
 
@@ -313,6 +330,8 @@ def run(
         fast=fast,
         llm_classify=llm_classify,
         llm_model=llm_model,
+        triage=triage,
+        triage_threshold=triage_threshold,
     )
 
 
