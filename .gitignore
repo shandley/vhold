@@ -55,5 +55,9 @@ case_studies/*/results/
 case_studies/metagenomic_dark_matter/sotus.palmprint.faa*
 case_studies/metagenomic_dark_matter/label_sotu.tsv
 
+# Environment variables / secrets
+.env
+.env.*
+
 # Lock files
 uv.lock

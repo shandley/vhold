@@ -27,6 +27,8 @@ def run_pipeline(
     confidence_threshold: float = 0.7,
     model_dir: str | Path | None = None,
     prefix: str = "vhold",
+    llm_classify: bool = False,
+    llm_model: str = "claude-haiku-4-5-20251001",
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -179,6 +181,15 @@ def run_pipeline(
     logger.info(f"Annotated: {annotated}/{len(annotations)} proteins")
     logger.info(f"Multi-database agreement: {with_consensus}/{annotated} proteins")
     logger.info("")
+
+    # ========================================
+    # Step 4b: LLM reclassification (optional)
+    # ========================================
+    if llm_classify:
+        logger.info("Step 4b: LLM reclassification of unknown proteins...")
+        from vhold.results.llm_classify import llm_reclassify
+        annotations = llm_reclassify(annotations, model=llm_model)
+        logger.info("")
 
     # ========================================
     # Step 5: Generate output files

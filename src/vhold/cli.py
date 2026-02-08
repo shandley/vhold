@@ -257,9 +257,21 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     default="vhold",
     help="Prefix for output files (default: vhold)",
 )
+@click.option(
+    "--llm-classify",
+    is_flag=True,
+    default=False,
+    help="Use LLM to classify unknown proteins (requires: pip install vhold[llm])",
+)
+@click.option(
+    "--llm-model",
+    default="claude-haiku-4-5-20251001",
+    help="Model for LLM classification (default: claude-haiku-4-5-20251001)",
+)
 def run(
     input_file, output, database, databases, threads, batch_size, device,
-    evalue, sensitivity, confidence_threshold, model_dir, prefix
+    evalue, sensitivity, confidence_threshold, model_dir, prefix,
+    llm_classify, llm_model,
 ):
     """Run the full vhold annotation pipeline.
 
@@ -285,6 +297,8 @@ def run(
         confidence_threshold=confidence_threshold,
         model_dir=model_dir,
         prefix=prefix,
+        llm_classify=llm_classify,
+        llm_model=llm_model,
     )
 
 
