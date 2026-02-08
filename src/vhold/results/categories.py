@@ -30,10 +30,14 @@ FUNCTIONAL_CATEGORIES = {
         "glycoprotein",
         "membrane protein",
         "nucleocapsid",
+        "nucleoprotein",  # Ebola NP, Rabies N, paramyxovirus N
         "tegument",
         "baseplate",
         "assembly",  # Assembly proteins (e.g., MS2 maturation protein)
         "maturation",  # Maturation proteins
+        "fusion protein",  # Paramyxovirus F proteins (class I fusion)
+        "fusion glycoprotein",  # Viral fusion glycoproteins
+        "attachment",  # Attachment glycoproteins (e.g., Nipah G, HN proteins)
     ],
     "replication": [
         "polymerase",
@@ -45,6 +49,8 @@ FUNCTIONAL_CATEGORIES = {
         "rep protein",
         "nsp12",
         "nsp13",
+        "phosphoprotein",  # Paramyxo/rhabdovirus P protein (polymerase cofactor)
+        "polymerase cofactor",  # Explicit cofactor annotation
     ],
     "protease": [
         "protease",
@@ -69,6 +75,13 @@ FUNCTIONAL_CATEGORIES = {
         "packaging",
         "scaffold",
         "portal protein",
+    ],
+    "host_interaction": [
+        "interferon antagonist",  # V/C proteins of paramyxoviruses
+        "immune evasion",  # General immune evasion proteins
+        "immune antagonist",  # Immune system antagonism
+        "interferon inhibitor",  # IFN signaling inhibitors
+        "innate immune",  # Innate immunity modulators
     ],
     "regulatory": [
         "transcription",
@@ -123,6 +136,7 @@ PFAM_TO_CATEGORY = {
         "glycoprotein",
         "spike",
         "nucleocapsid",
+        "nucleoprotein",  # Negative-sense RNA virus nucleoproteins
         "vp1", "vp2", "vp3", "vp4", "vp5", "vp6", "vp7",
         "major capsid",
         "minor capsid",
@@ -147,6 +161,10 @@ PFAM_TO_CATEGORY = {
         "structural envelope",
         "assembly protein",  # e.g., MS2 maturation/assembly
         "maturation protein",
+        "fusion protein",  # Paramyxovirus F, class I/II/III fusion proteins
+        "fusion glycoprotein",  # Viral fusion glycoproteins
+        "attachment protein",  # HN, H, G attachment glycoproteins
+        "coronavirus m matrix",  # Coronavirus membrane/matrix protein
     ],
     # Replication machinery
     "replication": [
@@ -168,6 +186,8 @@ PFAM_TO_CATEGORY = {
         "viral helicase",
         "superfamily 1 rna helicase",
         "superfamily 2 helicase",
+        "phosphoprotein",  # Paramyxo/rhabdovirus P (polymerase cofactor)
+        "polymerase cofactor",
         # Nucleotide metabolism (required for replication)
         "thymidine kinase",
         "thymidylate",
@@ -239,6 +259,16 @@ PFAM_TO_CATEGORY = {
         "translation enhancer",
         "translation effector",
         "translation regulation",
+    ],
+    # Host interaction / immune evasion
+    "host_interaction": [
+        "interferon antagonist",
+        "interferon inhibitor",
+        "immune evasion",
+        "immune antagonist",
+        "innate immune",
+        "stat inhibitor",
+        "nf-kappa-b inhibitor",
     ],
     # Movement (plant viruses)
     "movement": [
@@ -386,7 +416,10 @@ SUPERFAMILY_TO_CATEGORY = {
         "ndv fusion glycoprotein",
         "wssv envelope",
         "p40 nucleoprotein",
+        "nucleoprotein",  # Viral nucleoproteins (structural in nsRNA viruses)
         "immunoglobulin",  # Many viral receptors/attachment proteins
+        "flaviviral glycoprotein",  # Flavivirus envelope glycoproteins
+        "herpesvirus glycoprotein b",  # Herpesvirus glycoprotein B
     ],
     "replication": [
         "dna/rna polymerases",
