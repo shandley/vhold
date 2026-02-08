@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from tqdm import tqdm
-from transformers import T5Tokenizer, AutoModelForSeq2SeqLM
+from transformers import T5Tokenizer, T5EncoderModel, AutoModelForSeq2SeqLM
 
 from vhold.features.prostt5 import prepare_prostt5_sequence, get_device
 from vhold.utils.constants import (
@@ -65,6 +65,14 @@ class EmbeddingExtractor:
     Uses only the encoder half of the T5 model -- a single forward pass
     producing a (seq_len, 1024) representation that is mean-pooled to
     a single 1024-dim vector per protein.
+
+    Two loading modes:
+    - encoder_only=True (default): Loads T5EncoderModel (~4.8 GB fp32),
+      saving ~6.5 GB vs the full model. Best for standalone embedding
+      extraction (e.g., building the reference database).
+    - encoder_only=False: Loads the full AutoModelForSeq2SeqLM and uses
+      its .encoder sub-module. This allows the loaded model to be reused
+      by ProstT5Predictor for decoding, avoiding a double load.
     """
 
     def __init__(
@@ -73,6 +81,7 @@ class EmbeddingExtractor:
         model_dir: Path | None = None,
         model: object | None = None,
         tokenizer: object | None = None,
+        encoder_only: bool = True,
     ):
         """Initialize embedding extractor.
 
@@ -81,12 +90,26 @@ class EmbeddingExtractor:
             model_dir: Directory to cache models
             model: Pre-loaded ProstT5 model (avoids double loading)
             tokenizer: Pre-loaded tokenizer
+            encoder_only: If True, load only the encoder half (saves ~6.5GB).
+                If False, load full model so it can be reused for decoding.
         """
         self.device = get_device(device)
         self.model_dir = model_dir or get_model_dir()
         self.model = model
         self.tokenizer = tokenizer
+        self._encoder_only = encoder_only
         self._loaded = model is not None and tokenizer is not None
+
+    def _run_encoder(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
+        """Run the encoder forward pass.
+
+        Handles both T5EncoderModel (direct call) and full
+        AutoModelForSeq2SeqLM (.encoder sub-module).
+        """
+        if isinstance(self.model, T5EncoderModel):
+            return self.model(input_ids=input_ids, attention_mask=attention_mask)
+        else:
+            return self.model.encoder(input_ids=input_ids, attention_mask=attention_mask)
 
     def load_model(self) -> None:
         """Load the ProstT5 model and tokenizer."""
@@ -106,10 +129,18 @@ class EmbeddingExtractor:
             )
 
         if self.model is None:
-            self.model = AutoModelForSeq2SeqLM.from_pretrained(
-                PROSTT5_MODEL_NAME,
-                cache_dir=model_dir,
-            )
+            if self._encoder_only:
+                logger.info("Loading encoder-only model (T5EncoderModel, ~4.8 GB)")
+                self.model = T5EncoderModel.from_pretrained(
+                    PROSTT5_MODEL_NAME,
+                    cache_dir=model_dir,
+                )
+            else:
+                logger.info("Loading full model (AutoModelForSeq2SeqLM, ~11.3 GB)")
+                self.model = AutoModelForSeq2SeqLM.from_pretrained(
+                    PROSTT5_MODEL_NAME,
+                    cache_dir=model_dir,
+                )
             self.model = self.model.to(self.device)
             self.model = self.model.float()
             self.model.eval()
@@ -139,7 +170,7 @@ class EmbeddingExtractor:
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
         with torch.no_grad():
-            encoder_output = self.model.encoder(
+            encoder_output = self._run_encoder(
                 input_ids=inputs["input_ids"],
                 attention_mask=inputs["attention_mask"],
             )
@@ -199,7 +230,7 @@ class EmbeddingExtractor:
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
             with torch.no_grad():
-                encoder_output = self.model.encoder(
+                encoder_output = self._run_encoder(
                     input_ids=inputs["input_ids"],
                     attention_mask=inputs["attention_mask"],
                 )
@@ -332,6 +363,7 @@ def triage_proteins(
     batch_size: int = 32,
     model: object | None = None,
     tokenizer: object | None = None,
+    encoder_only: bool = False,
 ) -> tuple[TriageResult, EmbeddingExtractor]:
     """Run embedding-based triage on input sequences.
 
@@ -348,6 +380,8 @@ def triage_proteins(
         batch_size: Batch size for embedding extraction
         model: Pre-loaded ProstT5 model
         tokenizer: Pre-loaded tokenizer
+        encoder_only: If True, load only encoder (saves memory but model
+            can't be reused for decoding). Default False for pipeline use.
 
     Returns:
         Tuple of (TriageResult, EmbeddingExtractor) -- the extractor is
@@ -358,6 +392,7 @@ def triage_proteins(
         model_dir=model_dir,
         model=model,
         tokenizer=tokenizer,
+        encoder_only=encoder_only,
     )
 
     # Extract embeddings (encoder only, fast)

@@ -6,21 +6,31 @@ for all reference proteins. The resulting .npz file is used by vhold's
 embedding triage mode (--triage) to quickly identify known proteins
 without running the expensive decoder.
 
-Requires a GPU for practical runtimes (~hours for 436K proteins).
+Uses T5EncoderModel (encoder-only, ~4.8 GB) instead of the full model
+(~11.3 GB) to minimize memory usage. Supports checkpoint/resume for
+long-running jobs.
+
+Estimated times on Apple M4 (24GB):
+  MPS: ~1.8 proteins/sec -> ~68 hours for 436K proteins
+  CPU: ~1.3 proteins/sec -> ~94 hours for 436K proteins
 
 Usage:
-    python scripts/build_embedding_db.py \
-        --db-dir ~/.vhold/databases \
-        --output vhold_embeddings.npz \
-        --device cuda \
-        --batch-size 64
+    # Basic (uses installed databases, MPS on Apple Silicon):
+    caffeinate -i python scripts/build_embedding_db.py \
+        --output ~/.vhold/databases/embeddings/vhold_embeddings.npz \
+        --device mps
 
-    # Or with explicit FASTA files:
+    # With explicit FASTA files:
     python scripts/build_embedding_db.py \
         --bfvd-fasta /path/to/bfvd_sequences.fasta \
         --viro3d-fasta /path/to/viro3d_sequences.fasta \
         --output vhold_embeddings.npz \
-        --device cuda
+        --device cuda --batch-size 64
+
+    # Resume after interruption:
+    python scripts/build_embedding_db.py \
+        --output ~/.vhold/databases/embeddings/vhold_embeddings.npz \
+        --device mps --resume
 """
 
 import argparse
@@ -60,9 +70,96 @@ def extract_sequences_from_foldseek_db(db_path: Path) -> dict[str, str]:
     return sequences
 
 
+def get_checkpoint_dir(output_path: Path) -> Path:
+    """Get checkpoint directory for a given output path."""
+    return output_path.parent / f".{output_path.stem}_checkpoints"
+
+
+def save_checkpoint(
+    checkpoint_dir: Path,
+    ids: list[str],
+    embeddings: np.ndarray,
+    source_dbs: list[str],
+    processed_count: int,
+) -> None:
+    """Save a checkpoint of processed embeddings.
+
+    Args:
+        checkpoint_dir: Directory for checkpoint files
+        ids: Protein IDs processed so far
+        embeddings: Embedding matrix (N, 1024) float32
+        source_dbs: Source database for each protein
+        processed_count: Total number processed (for naming)
+    """
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    checkpoint_path = checkpoint_dir / "latest.npz"
+    tmp_path = checkpoint_dir / "latest.npz.tmp"
+
+    np.savez(
+        tmp_path,
+        ids=np.array(ids),
+        embeddings=embeddings.astype(np.float32),
+        source_dbs=np.array(source_dbs),
+        processed_count=np.array(processed_count),
+    )
+
+    # Atomic rename
+    tmp_path.rename(checkpoint_path)
+
+
+def load_checkpoint(checkpoint_dir: Path) -> dict | None:
+    """Load the latest checkpoint if it exists.
+
+    Returns:
+        Dict with 'ids', 'embeddings', 'source_dbs', 'processed_count'
+        or None if no checkpoint exists.
+    """
+    checkpoint_path = checkpoint_dir / "latest.npz"
+    if not checkpoint_path.exists():
+        return None
+
+    data = np.load(checkpoint_path, allow_pickle=True)
+    return {
+        "ids": list(data["ids"]),
+        "embeddings": data["embeddings"].astype(np.float32),
+        "source_dbs": list(data["source_dbs"]),
+        "processed_count": int(data["processed_count"]),
+    }
+
+
+def format_eta(seconds: float) -> str:
+    """Format seconds into human-readable string."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    elif seconds < 3600:
+        return f"{seconds / 60:.1f}m"
+    elif seconds < 86400:
+        return f"{seconds / 3600:.1f}h"
+    else:
+        return f"{seconds / 86400:.1f}d"
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Build vhold embedding database from reference proteins"
+        description="Build vhold embedding database from reference proteins",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+Examples:
+  # Generate on Apple Silicon (run overnight):
+  caffeinate -i python scripts/build_embedding_db.py \\
+      --output ~/.vhold/databases/embeddings/vhold_embeddings.npz \\
+      --device mps
+
+  # Resume after interruption:
+  python scripts/build_embedding_db.py \\
+      --output ~/.vhold/databases/embeddings/vhold_embeddings.npz \\
+      --device mps --resume
+
+  # CUDA GPU (faster):
+  python scripts/build_embedding_db.py \\
+      --output vhold_embeddings.npz --device cuda --batch-size 64
+""",
     )
     parser.add_argument(
         "--db-dir",
@@ -98,14 +195,26 @@ def main():
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=64,
-        help="Batch size for embedding extraction (default: 64)",
+        default=1,
+        help="Batch size for embedding extraction (default: 1, optimal for MPS)",
     )
     parser.add_argument(
         "--max-length",
         type=int,
         default=2048,
         help="Maximum sequence length to process (default: 2048)",
+    )
+    parser.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=10000,
+        help="Save checkpoint every N proteins (default: 10000)",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        default=False,
+        help="Resume from last checkpoint",
     )
 
     args = parser.parse_args()
@@ -199,53 +308,235 @@ def main():
             f"longer than {args.max_length}aa"
         )
 
-    print(f"\nTotal sequences to process: {len(all_sequences)}")
+    # Sort by sequence length for efficient processing (less padding waste)
+    sorted_ids = sorted(all_sequences.keys(), key=lambda sid: len(all_sequences[sid]))
+    sorted_sequences = {sid: all_sequences[sid] for sid in sorted_ids}
+
+    print(f"\nTotal sequences to process: {len(sorted_sequences)}")
     print(f"Device: {args.device}")
     print(f"Batch size: {args.batch_size}")
+    print(f"Checkpoint interval: {args.checkpoint_interval}")
     print()
 
-    # Extract embeddings
-    from vhold.features.embeddings import EmbeddingExtractor
+    # Check for checkpoint/resume
+    output_path = Path(args.output)
+    checkpoint_dir = get_checkpoint_dir(output_path)
+    completed_ids: set[str] = set()
+    collected_ids: list[str] = []
+    collected_embeddings: list[np.ndarray] = []
+    collected_sources: list[str] = []
+    start_offset = 0
 
-    extractor = EmbeddingExtractor(device=args.device)
-    start_time = time.time()
+    if args.resume:
+        checkpoint = load_checkpoint(checkpoint_dir)
+        if checkpoint is not None:
+            completed_ids = set(checkpoint["ids"])
+            collected_ids = checkpoint["ids"]
+            collected_embeddings = [checkpoint["embeddings"]]
+            collected_sources = checkpoint["source_dbs"]
+            start_offset = checkpoint["processed_count"]
+            print(
+                f"Resuming from checkpoint: {start_offset} proteins already processed"
+            )
+            print()
+        else:
+            print("No checkpoint found, starting from scratch")
+            print()
 
-    ids, embeddings = extractor.extract_batch(
-        all_sequences,
-        batch_size=args.batch_size,
-        show_progress=True,
+    # Filter out already-processed sequences
+    remaining = {
+        sid: seq for sid, seq in sorted_sequences.items()
+        if sid not in completed_ids
+    }
+
+    if not remaining:
+        print("All sequences already processed!")
+        if collected_embeddings:
+            print("Saving final output...")
+            # Fall through to save logic
+        else:
+            sys.exit(0)
+
+    # Load model (encoder-only to save ~6.5 GB memory)
+    import re
+    import torch
+    from transformers import T5EncoderModel, T5Tokenizer
+    from vhold.features.prostt5 import prepare_prostt5_sequence, get_device
+
+    device = get_device(args.device)
+    print(f"Loading T5EncoderModel (encoder-only, ~4.8 GB)...")
+    load_start = time.time()
+
+    from vhold.utils.constants import PROSTT5_MODEL_NAME, get_model_dir
+
+    model_dir = get_model_dir()
+    Path(model_dir).mkdir(parents=True, exist_ok=True)
+
+    tokenizer = T5Tokenizer.from_pretrained(
+        PROSTT5_MODEL_NAME, cache_dir=model_dir, do_lower_case=False
     )
+    model = T5EncoderModel.from_pretrained(PROSTT5_MODEL_NAME, cache_dir=model_dir)
+    model = model.to(device).float()
+    model.eval()
 
-    elapsed = time.time() - start_time
-    print(f"\nExtraction complete in {elapsed:.1f}s")
-    print(f"  Rate: {len(ids) / elapsed:.1f} proteins/second")
-    print(f"  Embeddings shape: {embeddings.shape}")
+    print(f"Model loaded in {time.time() - load_start:.1f}s")
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Parameters: {total_params / 1e6:.1f}M ({total_params * 4 / 1e9:.2f} GB)")
+    print()
 
-    # Build source_dbs array
-    source_dbs = np.array([source_map[sid] for sid in ids])
+    # Process sequences
+    remaining_ids = list(remaining.keys())
+    remaining_seqs = [remaining[sid] for sid in remaining_ids]
+    total_remaining = len(remaining_ids)
+    batch_size = args.batch_size
+    processed_in_session = 0
+    session_start = time.time()
+
+    print(f"Processing {total_remaining} remaining sequences...")
+    print()
+
+    batch_embeddings: list[np.ndarray] = []
+    batch_ids: list[str] = []
+    batch_sources: list[str] = []
+
+    try:
+        for i in range(0, total_remaining, batch_size):
+            batch_end = min(i + batch_size, total_remaining)
+            batch_seq_ids = remaining_ids[i:batch_end]
+            batch_seqs = remaining_seqs[i:batch_end]
+
+            # Prepare and tokenize
+            prepared = [prepare_prostt5_sequence(s) for s in batch_seqs]
+            inputs = tokenizer(
+                prepared,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=2048,
+            )
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+
+            # Forward pass
+            with torch.no_grad():
+                output = model(
+                    input_ids=inputs["input_ids"],
+                    attention_mask=inputs["attention_mask"],
+                )
+
+            # Mean pool and normalize
+            hidden = output.last_hidden_state
+            mask = inputs["attention_mask"].unsqueeze(-1).float()
+            pooled = (hidden * mask).sum(dim=1) / mask.sum(dim=1)
+            emb_np = pooled.cpu().numpy()
+
+            norms = np.linalg.norm(emb_np, axis=1, keepdims=True)
+            norms = np.where(norms > 0, norms, 1.0)
+            emb_np = emb_np / norms
+
+            # Collect
+            batch_embeddings.append(emb_np)
+            batch_ids.extend(batch_seq_ids)
+            batch_sources.extend(source_map[sid] for sid in batch_seq_ids)
+            processed_in_session += len(batch_seq_ids)
+
+            # Progress
+            total_processed = start_offset + processed_in_session
+            elapsed = time.time() - session_start
+            rate = processed_in_session / elapsed if elapsed > 0 else 0
+            eta = (total_remaining - processed_in_session) / rate if rate > 0 else 0
+
+            if processed_in_session % 100 < batch_size or i + batch_size >= total_remaining:
+                print(
+                    f"  [{total_processed}/{start_offset + total_remaining}] "
+                    f"{rate:.1f} prot/s, "
+                    f"ETA: {format_eta(eta)}, "
+                    f"seq_len: {max(len(s) for s in batch_seqs)}aa"
+                )
+
+            # Checkpoint
+            if processed_in_session % args.checkpoint_interval < batch_size:
+                print(f"  Saving checkpoint ({total_processed} proteins)...")
+                # Merge all embeddings so far
+                all_embs = collected_embeddings + batch_embeddings
+                all_ids_list = collected_ids + batch_ids
+                all_sources_list = collected_sources + batch_sources
+                merged_emb = np.vstack(all_embs) if all_embs else np.empty((0, 1024))
+
+                save_checkpoint(
+                    checkpoint_dir=checkpoint_dir,
+                    ids=all_ids_list,
+                    embeddings=merged_emb,
+                    source_dbs=all_sources_list,
+                    processed_count=total_processed,
+                )
+
+    except KeyboardInterrupt:
+        print("\n\nInterrupted! Saving checkpoint...")
+        all_embs = collected_embeddings + batch_embeddings
+        all_ids_list = collected_ids + batch_ids
+        all_sources_list = collected_sources + batch_sources
+        total_processed = start_offset + processed_in_session
+
+        if all_embs:
+            merged_emb = np.vstack(all_embs)
+            save_checkpoint(
+                checkpoint_dir=checkpoint_dir,
+                ids=all_ids_list,
+                embeddings=merged_emb,
+                source_dbs=all_sources_list,
+                processed_count=total_processed,
+            )
+            print(f"Checkpoint saved: {total_processed} proteins")
+            print(f"Resume with: python {sys.argv[0]} --resume --output {args.output}")
+        sys.exit(1)
+
+    # Merge all results
+    all_embs = collected_embeddings + batch_embeddings
+    all_ids_list = collected_ids + batch_ids
+    all_sources_list = collected_sources + batch_sources
+
+    if not all_embs:
+        print("ERROR: No embeddings produced.")
+        sys.exit(1)
+
+    embeddings = np.vstack(all_embs)
+    total_elapsed = time.time() - session_start
+
+    print(f"\nExtraction complete in {format_eta(total_elapsed)}")
+    print(f"  Session: {processed_in_session} proteins in {format_eta(total_elapsed)}")
+    if total_elapsed > 0:
+        print(f"  Rate: {processed_in_session / total_elapsed:.1f} proteins/second")
+    print(f"  Total embeddings: {embeddings.shape}")
 
     # Save as compressed .npz with float16 embeddings
-    output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     embeddings_fp16 = embeddings.astype(np.float16)
-    protein_ids = np.array(ids)
+    protein_ids = np.array(all_ids_list)
+    source_dbs_arr = np.array(all_sources_list)
 
     np.savez_compressed(
         output_path,
         embeddings=embeddings_fp16,
         protein_ids=protein_ids,
-        source_dbs=source_dbs,
+        source_dbs=source_dbs_arr,
     )
 
     file_size_mb = output_path.stat().st_size / (1024 * 1024)
     print(f"\nSaved to {output_path}")
     print(f"  File size: {file_size_mb:.1f} MB")
     print(f"  Proteins: {len(protein_ids)}")
-    print(f"  BFVD: {sum(1 for s in source_dbs if s == 'bfvd')}")
-    print(f"  Viro3D: {sum(1 for s in source_dbs if s == 'viro3d')}")
+    print(f"  BFVD: {sum(1 for s in all_sources_list if s == 'bfvd')}")
+    print(f"  Viro3D: {sum(1 for s in all_sources_list if s == 'viro3d')}")
     print(f"  Embedding dim: {embeddings.shape[1]}")
     print(f"  Storage: float16")
+
+    # Clean up checkpoints
+    if checkpoint_dir.exists():
+        for f in checkpoint_dir.iterdir():
+            f.unlink()
+        checkpoint_dir.rmdir()
+        print("\nCheckpoint directory cleaned up")
 
 
 if __name__ == "__main__":

@@ -161,6 +161,61 @@ class TestEmbeddingExtractor:
         norms = np.linalg.norm(embeddings, axis=1)
         np.testing.assert_allclose(norms, 1.0, atol=1e-5)
 
+    def test_encoder_only_flag_default_true(self):
+        """Default encoder_only should be True."""
+        extractor = EmbeddingExtractor(device="cpu")
+        assert extractor._encoder_only is True
+
+    def test_encoder_only_false_uses_model_encoder(self):
+        """encoder_only=False should call model.encoder(...)."""
+        import torch
+
+        mock_model = MagicMock()
+        mock_tokenizer = MagicMock()
+        mock_tokenizer.return_value = {
+            "input_ids": torch.ones(1, 10, dtype=torch.long),
+            "attention_mask": torch.ones(1, 10, dtype=torch.long),
+        }
+        mock_model.encoder.return_value = _make_mock_encoder_output(1, 10)
+
+        extractor = EmbeddingExtractor(
+            device="cpu", model=mock_model, tokenizer=mock_tokenizer,
+            encoder_only=False,
+        )
+        extractor.extract_single("ACDEFGHIK")
+
+        mock_model.encoder.assert_called_once()
+
+    def test_run_encoder_dispatches_on_type(self):
+        """_run_encoder uses direct call for T5EncoderModel, .encoder for others."""
+        import torch
+        from transformers import T5EncoderModel
+
+        # Test with a mock that IS a T5EncoderModel
+        mock_encoder_model = MagicMock(spec=T5EncoderModel)
+        mock_encoder_model.return_value = _make_mock_encoder_output(1, 5)
+
+        extractor = EmbeddingExtractor(device="cpu")
+        extractor.model = mock_encoder_model
+        extractor._loaded = True
+
+        ids = torch.ones(1, 5, dtype=torch.long)
+        mask = torch.ones(1, 5, dtype=torch.long)
+        extractor._run_encoder(ids, mask)
+
+        # T5EncoderModel: should call model() directly, not model.encoder()
+        mock_encoder_model.assert_called_once()
+
+        # Test with a regular mock (not T5EncoderModel)
+        mock_full_model = MagicMock()
+        mock_full_model.encoder.return_value = _make_mock_encoder_output(1, 5)
+
+        extractor.model = mock_full_model
+        extractor._run_encoder(ids, mask)
+
+        # Full model: should call model.encoder()
+        mock_full_model.encoder.assert_called_once()
+
 
 # ============================================================================
 # TestEmbeddingDatabase
