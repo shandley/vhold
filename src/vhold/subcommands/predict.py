@@ -18,6 +18,7 @@ def run_predict(
     device: str = "auto",
     confidence_threshold: float = 0.7,
     model_dir: str | Path | None = None,
+    fast: bool = False,
 ) -> None:
     """Run ProstT5 3Di prediction on input sequences.
 
@@ -29,6 +30,7 @@ def run_predict(
         device: Device for inference ('auto', 'cuda', 'mps', 'cpu')
         confidence_threshold: Threshold for confidence masking
         model_dir: Model cache directory
+        fast: Use greedy decoding (~3x faster, may reduce sensitivity)
     """
     setup_logging()
 
@@ -55,6 +57,7 @@ def run_predict(
     predictor = ProstT5Predictor(
         device=device,
         model_dir=Path(model_dir) if model_dir else None,
+        fast=fast,
     )
 
     # Run predictions

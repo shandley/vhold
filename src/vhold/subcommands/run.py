@@ -27,6 +27,7 @@ def run_pipeline(
     confidence_threshold: float = 0.7,
     model_dir: str | Path | None = None,
     prefix: str = "vhold",
+    fast: bool = False,
     llm_classify: bool = False,
     llm_model: str = "claude-haiku-4-5-20251001",
 ) -> None:
@@ -51,6 +52,7 @@ def run_pipeline(
         confidence_threshold: Confidence threshold for masking
         model_dir: Model cache directory
         prefix: Output file prefix
+        fast: Use greedy decoding for ProstT5 (~3x faster)
     """
     setup_logging()
 
@@ -104,6 +106,7 @@ def run_pipeline(
     predictor = ProstT5Predictor(
         device=device,
         model_dir=Path(model_dir) if model_dir else None,
+        fast=fast,
     )
 
     results = predictor.predict_batch(

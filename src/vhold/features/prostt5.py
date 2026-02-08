@@ -94,11 +94,22 @@ class ProstT5Predictor:
         "num_return_sequences": 1,
     }
 
+    # Fast generation: greedy decoding (1 beam, no sampling)
+    # ~3x faster than beam search, suitable for well-characterized proteins
+    # where high-identity hits are expected. Not recommended for remote
+    # homology / twilight zone searches where 3Di quality matters more.
+    FAST_GEN_KWARGS = {
+        "do_sample": False,
+        "num_beams": 1,
+        "num_return_sequences": 1,
+    }
+
     def __init__(
         self,
         device: str = "auto",
         half_precision: bool = True,
         model_dir: Path | None = None,
+        fast: bool = False,
     ):
         """Initialize ProstT5 predictor.
 
@@ -106,11 +117,15 @@ class ProstT5Predictor:
             device: Device for inference ('auto', 'cuda', 'mps', 'cpu')
             half_precision: Use half precision on GPU (not supported on CPU)
             model_dir: Directory to cache models
+            fast: Use greedy decoding instead of beam search (~3x faster,
+                  suitable for well-characterized proteins)
         """
         self.device = get_device(device)
         # Half precision only works on CUDA, not MPS or CPU
         self.half_precision = half_precision and self.device.type == "cuda"
         self.model_dir = model_dir or get_model_dir()
+        self.fast = fast
+        self._gen_kwargs = self.FAST_GEN_KWARGS if fast else self.GEN_KWARGS
 
         self.tokenizer = None
         self.model = None
@@ -156,7 +171,8 @@ class ProstT5Predictor:
 
         self.model.eval()
         self._loaded = True
-        logger.info("Model loaded successfully")
+        mode = "fast (greedy decoding)" if self.fast else "standard (beam search)"
+        logger.info(f"Model loaded successfully - {mode}")
 
     def _prepare_sequence(self, sequence: str) -> str:
         """Prepare an amino acid sequence for ProstT5 input.
@@ -253,7 +269,7 @@ class ProstT5Predictor:
                 min_length=seq_len,
                 return_dict_in_generate=True,
                 output_scores=True,
-                **self.GEN_KWARGS,
+                **self._gen_kwargs,
             )
 
         # Decode the generated sequence
@@ -389,7 +405,7 @@ class ProstT5Predictor:
                 min_length=min_len,
                 return_dict_in_generate=True,
                 output_scores=True,
-                **self.GEN_KWARGS,
+                **self._gen_kwargs,
             )
 
         # Decode all outputs
@@ -476,6 +492,7 @@ def predict_3di(
     batch_size: int = 1,
     model_dir: Path | None = None,
     show_progress: bool = True,
+    fast: bool = False,
 ) -> dict[str, PredictionResult]:
     """Convenience function to predict 3Di sequences.
 
@@ -485,6 +502,7 @@ def predict_3di(
         batch_size: Batch size for prediction
         model_dir: Model cache directory
         show_progress: Show progress bar
+        fast: Use greedy decoding (~3x faster, lower quality)
 
     Returns:
         Dict mapping IDs to PredictionResults
@@ -492,6 +510,7 @@ def predict_3di(
     predictor = ProstT5Predictor(
         device=device,
         model_dir=model_dir,
+        fast=fast,
     )
 
     return predictor.predict_batch(

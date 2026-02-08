@@ -98,7 +98,13 @@ def install(database, bfvd, viro3d, force):
     default=None,
     help="Directory for ProstT5 model cache",
 )
-def predict(input_file, output, threads, batch_size, device, confidence_threshold, model_dir):
+@click.option(
+    "--fast",
+    is_flag=True,
+    default=False,
+    help="Use greedy decoding (~3x faster, may reduce sensitivity for remote homologs)",
+)
+def predict(input_file, output, threads, batch_size, device, confidence_threshold, model_dir, fast):
     """Predict 3Di structural sequences using ProstT5.
 
     Takes protein sequences and predicts 3Di structural alphabet
@@ -113,6 +119,7 @@ def predict(input_file, output, threads, batch_size, device, confidence_threshol
         device=device,
         confidence_threshold=confidence_threshold,
         model_dir=model_dir,
+        fast=fast,
     )
 
 
@@ -258,6 +265,12 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     help="Prefix for output files (default: vhold)",
 )
 @click.option(
+    "--fast",
+    is_flag=True,
+    default=False,
+    help="Use greedy decoding (~3x faster, may reduce sensitivity for remote homologs)",
+)
+@click.option(
     "--llm-classify",
     is_flag=True,
     default=False,
@@ -271,7 +284,7 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
 def run(
     input_file, output, database, databases, threads, batch_size, device,
     evalue, sensitivity, confidence_threshold, model_dir, prefix,
-    llm_classify, llm_model,
+    fast, llm_classify, llm_model,
 ):
     """Run the full vhold annotation pipeline.
 
@@ -297,6 +310,7 @@ def run(
         confidence_threshold=confidence_threshold,
         model_dir=model_dir,
         prefix=prefix,
+        fast=fast,
         llm_classify=llm_classify,
         llm_model=llm_model,
     )
