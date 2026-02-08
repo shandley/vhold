@@ -248,7 +248,7 @@ Based on these results, the functional category keyword system was expanded with
 
 1. **Use GPU for proteins >1000aa** - CPU scaling is quadratic
 2. **Process polyproteins as individual proteins** - Split before annotation
-3. **Complement keyword classification with ML-based methods** - Many viral proteins have generic descriptions
+3. **Use `--llm-classify` for eukaryotic viruses** - LLM reclassification correctly resolves V/C proteins, VP35, and other generic descriptions that keywords cannot handle
 
 ## References
 

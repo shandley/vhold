@@ -95,7 +95,7 @@ Viro3D (540 hits): 91.7% twilight | 8.1% remote | 0% moderate    | 0.2% easy
 - 11/27 correct functional category (40.7%) - limited by keyword coverage, not search quality
 - Hantaan "hypothetical" proteins correctly identified as structural
 
-**Key Finding**: The structural search is excellent - all 27 proteins got correct descriptions with high confidence. Category accuracy is limited by keyword coverage for eukaryotic virus terminology (fusion proteins, nucleoproteins, accessory proteins). Keywords expanded based on these findings.
+**Key Finding**: The structural search is excellent - all 27 proteins got correct descriptions with high confidence. Category accuracy is limited by keyword coverage for eukaryotic virus terminology (fusion proteins, nucleoproteins, accessory proteins). Keywords expanded based on these findings. The `--llm-classify` option further resolves generic descriptions (V/C proteins, VP35, etc.) that keywords fundamentally cannot handle.
 
 **Performance**: O(n^2) ProstT5 CPU scaling confirmed - 1248aa protein took ~4-5 hours on Apple M4. GPU recommended for proteins >1000aa.
 
