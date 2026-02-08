@@ -94,18 +94,20 @@ def save_checkpoint(
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     checkpoint_path = checkpoint_dir / "latest.npz"
-    tmp_path = checkpoint_dir / "latest.npz.tmp"
+    # np.savez auto-appends .npz, so use stem without extension
+    tmp_stem = checkpoint_dir / "latest_tmp"
 
     np.savez(
-        tmp_path,
+        tmp_stem,
         ids=np.array(ids),
         embeddings=embeddings.astype(np.float32),
         source_dbs=np.array(source_dbs),
         processed_count=np.array(processed_count),
     )
 
-    # Atomic rename
-    tmp_path.rename(checkpoint_path)
+    # np.savez wrote to latest_tmp.npz — rename atomically
+    tmp_npz = checkpoint_dir / "latest_tmp.npz"
+    tmp_npz.rename(checkpoint_path)
 
 
 def load_checkpoint(checkpoint_dir: Path) -> dict | None:
