@@ -1,5 +1,6 @@
 """ProstT5 model integration for 3Di sequence prediction."""
 
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +38,16 @@ class PredictionResult:
         return sum(self.confidence_scores) / len(self.confidence_scores)
 
 
+def _enable_mps_fallback() -> None:
+    """Enable MPS fallback to CPU for unsupported operations.
+
+    Some PyTorch operations (e.g., certain attention variants) are not yet
+    implemented on the MPS backend. This env var makes them fall back to CPU
+    rather than crashing.
+    """
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
+
 def get_device(device_str: str = "auto") -> torch.device:
     """Get the best available device for inference.
 
@@ -50,9 +61,16 @@ def get_device(device_str: str = "auto") -> torch.device:
         if torch.cuda.is_available():
             return torch.device("cuda")
         elif torch.backends.mps.is_available():
+            _enable_mps_fallback()
+            logger.info("Using MPS (Apple Silicon GPU) with CPU fallback for unsupported ops")
             return torch.device("mps")
         else:
             return torch.device("cpu")
+
+    if device_str == "mps":
+        _enable_mps_fallback()
+        logger.info("Using MPS (Apple Silicon GPU) with CPU fallback for unsupported ops")
+
     return torch.device(device_str)
 
 

@@ -49,20 +49,29 @@ ProstT5 3Di prediction has **O(n²) scaling** with sequence length on CPU:
 **Root cause**: Autoregressive generation with beam search (`do_sample=True`, `num_beams=3`).
 
 **Mitigation options**:
-1. Use GPU (CUDA) for large proteins
+1. Use MPS on Apple Silicon (~2x speedup) or CUDA on Linux/Windows
 2. Skip proteins >1000aa in quick benchmarks
 3. Implement greedy decoding option (future)
 4. Implement sequence chunking (future)
 
-### Apple Silicon (MPS) Testing
+### Apple Silicon (MPS) GPU Acceleration
 
 **Hardware**: Apple M4, 24GB RAM
+**Status**: **Working** (as of PyTorch 2.10.0 + transformers 5.0.0)
 
-**Finding**: MPS is unstable for vHold:
-- Large tensor operations caused system lockup
-- PyTorch 2.10.0 MPS backend not ready for transformers
+Previous instability (system lockups) was caused by a T5 MPS bug fixed in
+[transformers PR #31695](https://github.com/huggingface/transformers/issues/31737).
+MPS now works reliably with `PYTORCH_ENABLE_MPS_FALLBACK=1` (set automatically by vHold).
 
-**Recommendation**: Use `--device cpu` on Apple Silicon.
+**Benchmarks (Apple M4)**:
+
+| Protein Size | CPU | MPS | Speedup |
+|--------------|-----|-----|---------|
+| 173aa | 88s | 40s | **2.2x** |
+| 435aa | 170s | 95s | **1.8x** |
+| 1135aa | ~132 min | 72 min | **~1.8x** |
+
+**Recommendation**: Use `--device auto` (default) on Apple Silicon. MPS is selected automatically.
 
 ## Completed Case Studies
 
@@ -106,13 +115,13 @@ vHold Pipeline:
 2. **Sequence chunking** for very long proteins
 3. **Pre-computed 3Di cache** for common viruses
 4. **Batch processing** improvements
-5. **MPS stability testing** with newer PyTorch versions
+5. ~~**MPS stability testing**~~ - DONE: MPS works with ~2x speedup on Apple Silicon
 
 ## Commands Reference
 
 ```bash
-# Run vHold
-uv run vhold run -i input.fasta -o output/ -t 8 --device cpu
+# Run vHold (auto-selects MPS on Apple Silicon, CUDA on Linux)
+uv run vhold run -i input.fasta -o output/ -t 8
 
 # Check help
 uv run vhold --help

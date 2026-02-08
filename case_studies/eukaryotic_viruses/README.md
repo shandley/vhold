@@ -162,19 +162,21 @@ Both Hantaan proteins are labeled "hypothetical" in NCBI but were correctly iden
 
 ### Performance Findings
 
-**ProstT5 CPU timing (Apple M4, 24GB RAM)**:
+**ProstT5 timing (Apple M4, 24GB RAM)**:
 
-| Size Range | Proteins | Time Each |
-|------------|----------|-----------|
-| 166-340aa | 10 | 1-4 min |
-| 340-602aa | 12 | 3-10 min |
-| 739aa | 1 | ~15 min |
-| 1135aa | 1 | ~2h 12min |
-| 1248aa | 1 | ~4-5h |
+| Size Range | Proteins | CPU Time | MPS (GPU) Time | Speedup |
+|------------|----------|----------|----------------|---------|
+| 166-340aa | 10 | 1-4 min | 0.5-2 min | ~2x |
+| 340-602aa | 12 | 3-10 min | 1.5-5 min | ~2x |
+| 739aa | 1 | ~15 min | ~8 min | ~2x |
+| 1135aa | 1 | ~2h 12min | ~1h 12min | **1.8x** |
+| 1248aa | 1 | ~4-5h | ~2-2.5h | ~2x |
 
 **O(n^2) scaling confirmed**: The 1248aa Chikungunya protein took ~2x longer than the 1135aa Hantaan GPC, consistent with quadratic scaling in the autoregressive beam search.
 
-**Total wall time**: ~10.5 hours for 27 proteins (9:33 PM - 8:01 AM).
+**MPS (Apple Silicon GPU)**: As of PyTorch 2.10.0 + transformers 5.0.0, MPS works reliably with ~2x speedup. vHold auto-selects MPS on Apple Silicon with `--device auto` (default). A previous T5 MPS bug causing system lockups was fixed in [transformers #31695](https://github.com/huggingface/transformers/issues/31737).
+
+**Total wall time**: ~10.5 hours for 27 proteins on CPU. Estimated ~5-6 hours with MPS.
 
 ## Skipped Proteins
 
@@ -185,14 +187,17 @@ Two proteins were excluded due to CPU performance constraints:
 | YP_009047202.1 | MERS-CoV | 7078aa | Days | O(n^2) scaling makes this impractical on CPU |
 | NP_059433.1 | Dengue | 3478aa | ~12-24 hours | Also has corrupted sequence data (API rate limit error) |
 
-These would require GPU (CUDA) to process in reasonable time.
+These would require GPU (CUDA or MPS) to process in reasonable time.
 
 ## Running the Case Study
 
 ```bash
 cd case_studies/eukaryotic_viruses
 
-# Run on the 27-protein subset (skip very large proteins)
+# Run on the 27-protein subset (auto-selects MPS on Apple Silicon)
+uv run vhold run -i test_proteins_small.fasta -o results/ -t 8
+
+# Force CPU if needed
 uv run vhold run -i test_proteins_small.fasta -o results/ -t 8 --device cpu
 
 # Analyze results
@@ -201,7 +206,11 @@ python analyze_results.py results/
 
 ### With GPU (for all 29 proteins)
 ```bash
+# CUDA (Linux/Windows)
 uv run vhold run -i test_proteins.fasta -o results/ --device cuda
+
+# MPS (Apple Silicon) - auto-selected with --device auto
+uv run vhold run -i test_proteins.fasta -o results/
 ```
 
 ## Files
