@@ -1,6 +1,6 @@
 # vHold Roadmap: Strategic Directions
 
-Last updated: 2026-02-08
+Last updated: 2026-02-13
 
 ## Context
 
@@ -165,16 +165,23 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 - Can Foldseek all-vs-all provide the distance matrix?
 - How does this relate to ICTV's increasing use of structure-informed taxonomy?
 
-## Priority Ranking
+## Completed Since Last Update
 
-| # | Direction | Value | Effort | Priority |
-|---|-----------|-------|--------|----------|
-| 1 | BLAST pre-filtering | High | Moderate | **Do first** |
-| 3 | Pre-computed 3Di | High | Moderate | **Do second** |
-| 2 | Metagenomic integration | High | High | **Do third** |
+- **Embedding triage infrastructure**: ProstT5 encoder embedding DB complete (436K proteins, 822 MB, 59ms search). Subsumes BLAST pre-filtering (Direction 1) and pre-computed 3Di references (Direction 3) — see `docs/EMBEDDING_TRIAGE.md`.
+- **FoldMason integration (`vhold align`)**: Multiple structural alignment via ProstT5 → FoldMason fastMode bridge. Enables structural phylogenetics (Direction 6) as a practical tool. Note: refinement incompatible with coordinate-free mode (segfaults).
+
+## Updated Priority Ranking
+
+| # | Direction | Value | Effort | Status |
+|---|-----------|-------|--------|--------|
+| 1 | ~~BLAST pre-filtering~~ | ~~High~~ | ~~Moderate~~ | **Superseded** by embedding triage |
+| 3 | ~~Pre-computed 3Di~~ | ~~High~~ | ~~Moderate~~ | **Superseded** by embedding triage |
+| -- | Triage threshold calibration | High | Low | **Do first** — embedding DB ready, need to calibrate threshold |
+| -- | Wire `--triage` end-to-end | High | Moderate | **Do second** — connect embedding search to annotation transfer |
+| 2 | Metagenomic integration | High | High | Do third |
 | 4 | Emerging pathogen workflow | High (niche) | Low | Do when packaging for release |
 | 5 | Structural novelty discovery | Medium-high | Moderate | Research feature, iterate |
-| 6 | Structural taxonomy | Medium | High | Future/research direction |
+| 6 | Structural taxonomy | Medium | Moderate | **Partially enabled** by `vhold align` |
 
 ## References
 

@@ -1,6 +1,6 @@
 # Embedding-Based Triage for vHold
 
-Last updated: 2026-02-08
+Last updated: 2026-02-13
 
 ## Problem
 
@@ -65,22 +65,24 @@ Merge results with provenance
 - If the encoder recognizes a protein (close embedding), it has enough information to transfer annotation.
 - If the encoder doesn't recognize it (distant embedding), that's exactly when the full structural prediction adds value.
 
-## Pre-Computed Embedding Database
+## Pre-Computed Embedding Database — COMPLETE
 
-### Size estimate
-- 436K proteins (BFVD + Viro3D combined)
-- 1024 dimensions per protein
-- fp16: 436,000 x 1024 x 2 bytes = ~850 MB
-- fp32: 436,000 x 1024 x 4 bytes = ~1.7 GB
-- Distributable alongside existing Foldseek databases
+### Generation complete (2026-02-13)
+- **436,237 proteins** (351,242 BFVD + 84,995 Viro3D)
+- 1024 dimensions per protein, float16, L2 normalized
+- **822 MB** on disk at `~/.vhold/databases/embeddings/vhold_embeddings.npz`
+- Generated in **16.2 hours** on Apple M4 CPU (encoder-only, ~0.1-10s/protein depending on length)
+- Keys: `embeddings` (436237, 1024), `protein_ids` (436237,), `source_dbs` (436237,)
 
-### Generation
-- One-time compute on GPU (hours, not days)
-- Distribute as a downloadable file via `vhold install`
-- Update when databases update
+### Validation results
+- Zero NaN/Inf values, zero duplicate IDs, zero near-zero vectors
+- All norms within 0.9998-1.0002 (properly L2 normalized)
+- 2/1024 zero-variance dimensions (negligible)
+- Brute-force cosine similarity search: **59ms** over all 436K proteins
+- Nearest neighbor results biologically sensible (related proteins cluster together)
 
 ### Search at runtime
-- For typical vHold queries (tens to hundreds of proteins): brute-force cosine similarity via numpy is sufficient (milliseconds for 436K comparisons).
+- For typical vHold queries (tens to hundreds of proteins): brute-force cosine similarity via numpy is sufficient (**59ms for 436K comparisons**).
 - For large-scale batch queries (thousands+): FAISS approximate nearest neighbor as optional optimization.
 
 ## Dependency Impact

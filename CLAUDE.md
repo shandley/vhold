@@ -1,6 +1,6 @@
 # vHold Project State - Claude Code Context
 
-Last updated: 2026-02-08
+Last updated: 2026-02-13
 
 ## Project Overview
 
@@ -27,13 +27,16 @@ vHold Pipeline:
 | File | Purpose |
 |------|---------|
 | `src/vhold/features/prostt5.py` | 3Di prediction (ProstT5 model, MPS/CUDA/CPU) |
-| `src/vhold/features/foldseek.py` | Structural search against BFVD/Viro3D |
+| `src/vhold/features/foldseek.py` | Structural search against BFVD/Viro3D + `create_query_db()` |
+| `src/vhold/features/foldmason.py` | FoldMason MSA wrapper (`run_foldmason_msa()`) |
 | `src/vhold/subcommands/run.py` | Main pipeline orchestration |
+| `src/vhold/subcommands/align.py` | Multiple structural alignment pipeline |
 | `src/vhold/results/annotations.py` | Consensus annotation transfer |
 | `src/vhold/results/categories.py` | Keyword-based functional classification |
 | `src/vhold/results/llm_classify.py` | LLM-based functional classification |
-| `src/vhold/cli.py` | Click CLI (run, predict, compare, install) |
-| `tests/` | 334 tests (pytest) |
+| `src/vhold/utils/external.py` | External tool wrappers (Foldseek, FoldMason) |
+| `src/vhold/cli.py` | Click CLI (run, predict, compare, install, align) |
+| `tests/` | 360 tests (pytest) |
 
 ## Implemented Features
 
@@ -91,6 +94,66 @@ ProstT5 has **O(n^2) scaling** with sequence length due to autoregressive genera
 
 GPU acceleration (MPS or CUDA) is strongly recommended for proteins >500aa.
 
+### Embedding-Based Triage (`--triage`)
+
+Fast pre-screening using ProstT5 encoder-only embeddings (~0.1s/protein) to skip the slow decoder for known proteins. Compares query embeddings via cosine similarity against pre-computed reference DB.
+
+### Embedding Database — COMPLETE
+
+**Status**: Generation complete (2026-02-13)
+
+| Metric | Value |
+|--------|-------|
+| Total proteins | 436,237 |
+| BFVD proteins | 351,242 |
+| Viro3D proteins | 84,995 |
+| Embedding dimensions | 1,024 |
+| Storage format | float16, L2 normalized |
+| File size | 822 MB |
+| Location | `~/.vhold/databases/embeddings/vhold_embeddings.npz` |
+| Generation time | 16.2 hours (Apple M4 CPU) |
+
+**Validation results**:
+- Zero NaN/Inf values, zero duplicate IDs, zero near-zero vectors
+- All norms within 0.9998-1.0002 (properly L2 normalized)
+- 2/1024 zero-variance dimensions (negligible)
+- Brute-force cosine similarity search: **59ms** over all 436K proteins
+- Nearest neighbor results are biologically sensible (related proteins cluster)
+
+### `vhold align` — Multiple Structural Alignment via FoldMason — COMPLETE
+
+**Status**: Implemented and tested (2026-02-13)
+
+Performs multiple structural alignment of viral protein families by bridging ProstT5 3Di predictions with FoldMason's alignment engine. This implements what the FoldMason authors listed as a future feature (direct ProstT5 input).
+
+```bash
+# Full pipeline (ProstT5 prediction + FoldMason alignment)
+vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
+
+# Two-step workflow (reuse existing predictions)
+vhold predict -i proteins.fasta -o predictions/
+vhold align -i proteins.fasta --predictions-dir predictions/ -o alignment/
+```
+
+**Pipeline**: Input FASTA → ProstT5 3Di prediction → confidence masking → Foldseek DB (`create_query_db()`) → FoldMason `structuremsa` (fastMode) → AA MSA + 3Di MSA + guide tree
+
+**Key discovery**: FoldMason auto-enables fastMode when `_ca.dbtype` (C-alpha coordinates) is absent. vHold's `create_query_db()` already creates exactly this database format (AA + 3Di + headers, no coordinates). Zero modifications to existing code were needed.
+
+**Output files**:
+- `alignment_aa.fa` — Amino acid MSA (FASTA)
+- `alignment_3di.fa` — 3Di structural alphabet MSA (FASTA)
+- `alignment.nw` — Guide tree (Newick format)
+- `summary.json` — Alignment metadata
+- `predictions/` — ProstT5 intermediates (AA, masked 3Di, confidence scores)
+
+**Tested on**: 4 viral nucleoproteins (Nipah 166aa, Hendra 166aa, Rabies 202aa, MERS-CoV N 224aa). Guide tree correctly groups Nipah+Hendra as sister paramyxoviruses. ~4 min ProstT5 + <1s FoldMason.
+
+**Refinement limitation**: FoldMason's refinement (`--refine-iters`, `refinemsa`) requires C-alpha coordinates for LDDT scoring. Not compatible with ProstT5 coordinate-free mode — causes segfault. The `--refine-iters` CLI flag is accepted but logs a warning and is ignored. If refinement is ever needed, options are: (1) use AlphaFold/ESMFold predicted structures with FoldMason's `easy-msa`, or (2) use Foldseek's `--prostt5-model` flag to generate approximate coordinates alongside 3Di.
+
+**New files**: `features/foldmason.py`, `subcommands/align.py`, `tests/test_align_cli.py`
+**Modified files**: `cli.py`, `utils/external.py`
+**Reused (unchanged)**: `features/prostt5.py`, `features/foldseek.py`, `features/confidence.py`, `io/fasta.py`, `utils/external.py` (ExternalTool class)
+
 ## Completed Case Studies
 
 | # | Name | Proteins | Results |
@@ -109,81 +172,24 @@ GPU acceleration (MPS or CUDA) is strongly recommended for proteins >500aa.
 - 2 very large proteins skipped: MERS spike (7078aa), Dengue polyprotein (3478aa)
 - ~10.5 hours wall time on Apple M4 CPU
 
-## Embedding-Based Triage (`--triage`)
-
-Fast pre-screening using ProstT5 encoder-only embeddings (~0.1s/protein) to skip the slow decoder for known proteins. Compares query embeddings via cosine similarity against pre-computed reference DB of all BFVD+Viro3D proteins (~436K).
-
-### Embedding Database Generation
-- **Status**: 412,190 / 436,237 proteins (94.5%) — remaining proteins are longest (800-2048aa)
-- **Rate**: ~0.3-0.5 prot/s for long proteins on CPU (vs ~10 prot/s for short)
-- **Resume command**:
-  ```bash
-  caffeinate -i uv run python scripts/build_embedding_db.py \
-    --output ~/.vhold/databases/embeddings/vhold_embeddings.npz \
-    --device cpu --resume --checkpoint-interval 1000
-  ```
-
-### Future Application: Metagenomic Viral Protein Detection
-The same embedding DB could be repurposed as a fast structural-similarity-based viral protein detector for metagenomics:
-- Encode ORFs from metagenomic contigs (~0.1s/protein)
-- Cosine similarity vs 436K viral reference embeddings (~100ms)
-- High similarity → likely viral protein
-- Advantages: catches remote homologs that BLAST/HMMs miss (structural dark matter), extremely fast
-- Caveats: shared folds (jelly rolls, TIM barrels) could cause false positives; needs negative control calibration with bacterial/archaeal proteomes; best as pre-filter alongside contig-level tools (VirSorter, VIBRANT, geNomad)
-- Potential standalone tool or vHold module; benchmark on mock metagenome to measure precision/recall at different thresholds
-
-## FoldMason Integration (Planned)
-
-**FoldMason** (Steinegger lab, *Science* 2026) does multiple protein structure alignment at scale — 700x faster than MUSTANG. Same lab that makes Foldseek and ProstT5.
-
-### Key Discovery: Already Compatible
-
-FoldMason's `structuremsa` command accepts Foldseek-format databases. When C-alpha coordinates (`_ca.dbtype`) are absent, it automatically enables `fastMode` — pure 3Di+AA string alignment without coordinates.
-
-**vHold already creates exactly this database format** in `create_query_db()` (AA + 3Di + headers, no coordinates). So the bridge between ProstT5 and FoldMason essentially already exists.
-
-### What We Can Build
-
-**`vhold align`** — Multiple structural alignment of viral protein families:
-1. Take a set of viral proteins (from FASTA or from vHold search results)
-2. Predict 3Di with ProstT5 (already implemented)
-3. Create a Foldseek database (already implemented in `create_query_db()`)
-4. Run `foldmason structuremsa` on the database (will use fastMode)
-5. Output: AA alignment FASTA, 3Di alignment FASTA, guide tree (Newick)
-
-**Use cases**:
-- Align a viral protein family to find conserved structural motifs
-- Structure-based phylogenetics below the twilight zone (demonstrated in FoldMason paper on Flaviviridae)
-- Compare novel viral proteins against their closest structural relatives
-- Identify variable vs conserved regions in viral protein families
-
-### Trade-offs of fastMode (no coordinates)
-
-- No TM-score validation of alignments
-- No LDDT-based alignment quality scoring
-- Alignment driven purely by 3Di + AA similarity
-- Still produces valid multiple alignments — just without coordinate-based refinement
-
-### Alternative: Full Mode via Foldseek's ProstT5 Integration
-
-Foldseek's `createdb --prostt5-model` can generate predicted C-alpha coordinates alongside 3Di, enabling FoldMason's full mode with LDDT scoring. Trade-off: uses Foldseek's internal ProstT5 (greedy only, no confidence masking) vs vHold's enhanced ProstT5 (beam search, confidence scoring).
-
-### Installation
-
-```bash
-# FoldMason is distributed as a standalone binary (like Foldseek)
-# Install via conda or from GitHub releases
-conda install -c bioconda foldmason
-```
-
 ## Remaining Work
 
+### Immediate
+- **Embedding triage threshold calibration**: The embedding DB is built; need to determine optimal cosine similarity threshold for annotation transfer vs full structural search
+- **Wire `--triage` end-to-end**: Connect embedding search results to annotation transfer pipeline
 - **Dengue polyprotein**: Sequence data corrupted (API rate limit error in FASTA). Needs re-fetch.
 - **MERS-CoV spike**: 7078aa, requires GPU or many hours CPU to process.
-- **Sequence chunking**: For very long proteins (>2000aa), chunking could make processing feasible on CPU.
-- **Pre-computed 3Di cache**: Common viral reference proteins could be pre-computed.
-- **Batch processing improvements**: Current batch_size=1 default; batching same-length sequences could help.
-- **FoldMason `vhold align` subcommand**: Multiple structural alignment via ProstT5 → FoldMason bridge.
+
+### Medium-term (from ROADMAP.md)
+- **Metagenomic pipeline integration**: Accept VirSorter2/VIBRANT/geNomad output, produce DRAM-v/anvi'o compatible annotations
+- **ONNX INT8 quantization**: ~3x CPU speedup for ProstT5 decoder (no retraining needed)
+- **Pre-computed 3Di cache**: Common viral reference proteins pre-computed for instant search
+- **Batch processing improvements**: Batch same-length sequences for ProstT5
+
+### Research directions
+- **Structural distance-based viral taxonomy**: Pairwise structural distances for phylogenetics below twilight zone
+- **BitNet 1.58-bit quantization-aware retraining**: Ternary ProstT5 for 3-6x CPU speedup
+- **Metagenomic viral protein detection**: Repurpose embedding DB as fast structural-similarity-based viral protein detector
 
 ## Commands Reference
 
@@ -200,6 +206,12 @@ uv run vhold run -i input.fasta -o output/ --llm-classify
 # Two-step workflow (GPU predict, CPU search)
 uv run vhold predict -i input.fasta -o predictions/ --device cuda
 uv run vhold compare -p predictions/ -o results/ -t 32
+
+# Multiple structural alignment
+uv run vhold align -i proteins.fasta -o alignment/ --fast --device cpu -t 8
+
+# Align from pre-computed predictions
+uv run vhold align -i proteins.fasta --predictions-dir predictions/ -o alignment/
 
 # Database setup
 uv run vhold install
