@@ -166,7 +166,6 @@ def run_align(
             query_db=query_db,
             output_prefix=msa_prefix,
             threads=threads,
-            tmp_dir=tmp_path / "foldmason_tmp",
         )
 
         # Optional refinement

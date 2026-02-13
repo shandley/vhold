@@ -1,8 +1,6 @@
 """FoldMason wrapper for multiple structural alignment."""
 
 import json
-import shutil
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,7 +25,6 @@ def run_foldmason_msa(
     query_db: Path,
     output_prefix: Path,
     threads: int = 4,
-    tmp_dir: Path | None = None,
 ) -> FoldMasonResult:
     """Run FoldMason structuremsa on a Foldseek-format database.
 
@@ -38,7 +35,6 @@ def run_foldmason_msa(
         query_db: Path to Foldseek-format database (from create_query_db).
         output_prefix: Output prefix for result files.
         threads: Number of CPU threads.
-        tmp_dir: Temporary directory for FoldMason intermediates.
 
     Returns:
         FoldMasonResult with paths to output files.
@@ -54,63 +50,53 @@ def run_foldmason_msa(
     output_prefix = Path(output_prefix)
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
 
-    cleanup_tmp = False
-    if tmp_dir is None:
-        tmp_dir = Path(tempfile.mkdtemp(prefix="foldmason_"))
-        cleanup_tmp = True
+    args = [
+        "structuremsa",
+        str(query_db),
+        str(output_prefix),
+        "--threads", str(threads),
+    ]
 
-    try:
-        args = [
-            "structuremsa",
-            str(query_db),
-            str(output_prefix),
-            str(tmp_dir),
-            "--threads", str(threads),
-        ]
+    logger.info(f"Running FoldMason structuremsa with {threads} threads")
+    result = foldmason.run(args)
 
-        logger.info(f"Running FoldMason structuremsa with {threads} threads")
-        result = foldmason.run(args)
+    if result.stderr:
+        for line in result.stderr.strip().split("\n"):
+            if line.strip():
+                logger.debug(f"foldmason: {line.strip()}")
 
-        if result.stderr:
-            for line in result.stderr.strip().split("\n"):
-                if line.strip():
-                    logger.debug(f"foldmason: {line.strip()}")
+    # Parse output files
+    aa_msa_path = Path(str(output_prefix) + "_aa.fa")
+    three_di_msa_path = Path(str(output_prefix) + "_3di.fa")
+    tree_path = Path(str(output_prefix) + ".nw")
 
-        # Parse output files
-        aa_msa_path = Path(str(output_prefix) + "_aa.fa")
-        three_di_msa_path = Path(str(output_prefix) + "_3di.fa")
-        tree_path = Path(str(output_prefix) + ".nw")
-
-        if not aa_msa_path.exists():
-            raise RuntimeError(
-                f"FoldMason did not produce expected output: {aa_msa_path}"
-            )
-
-        # Count sequences and alignment length from AA MSA
-        num_sequences = 0
-        alignment_length = 0
-        with open(aa_msa_path) as f:
-            for line in f:
-                if line.startswith(">"):
-                    num_sequences += 1
-                elif num_sequences == 1:
-                    alignment_length += len(line.strip())
-
-        logger.info(
-            f"Alignment complete: {num_sequences} sequences, "
-            f"{alignment_length} columns"
+    if not aa_msa_path.exists():
+        raise RuntimeError(
+            f"FoldMason did not produce expected output: {aa_msa_path}"
         )
 
-        return FoldMasonResult(
-            aa_msa=aa_msa_path,
-            three_di_msa=three_di_msa_path,
-            guide_tree=tree_path,
-            num_sequences=num_sequences,
-            alignment_length=alignment_length,
-        )
-    finally:
-        if cleanup_tmp and tmp_dir.exists():
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+    # Count sequences and alignment length from AA MSA
+    num_sequences = 0
+    alignment_length = 0
+    with open(aa_msa_path) as f:
+        for line in f:
+            if line.startswith(">"):
+                num_sequences += 1
+            elif num_sequences == 1:
+                alignment_length += len(line.strip())
+
+    logger.info(
+        f"Alignment complete: {num_sequences} sequences, "
+        f"{alignment_length} columns"
+    )
+
+    return FoldMasonResult(
+        aa_msa=aa_msa_path,
+        three_di_msa=three_di_msa_path,
+        guide_tree=tree_path,
+        num_sequences=num_sequences,
+        alignment_length=alignment_length,
+    )
 
 
 def run_foldmason_refine(
