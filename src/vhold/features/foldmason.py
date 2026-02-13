@@ -31,6 +31,11 @@ def run_foldmason_msa(
     When the database lacks C-alpha coordinates (_ca.dbtype),
     FoldMason automatically uses fastMode (pure 3Di+AA alignment).
 
+    Note: Refinement (--refine-iters / refinemsa) requires C-alpha
+    coordinates and is not compatible with the coordinate-free databases
+    produced by ProstT5 prediction. FoldMason will segfault if refinement
+    is attempted without coordinates.
+
     Args:
         query_db: Path to Foldseek-format database (from create_query_db).
         output_prefix: Output prefix for result files.
@@ -99,59 +104,15 @@ def run_foldmason_msa(
     )
 
 
-def run_foldmason_refine(
-    query_db: Path,
-    msa_input: Path,
-    msa_output: Path,
-    refine_iters: int = 100,
-) -> Path:
-    """Refine a FoldMason MSA iteratively.
-
-    Randomly splits the MSA, removes gap-only columns, realigns,
-    and keeps the result only if LDDT improves. Repeats for
-    the specified number of iterations.
-
-    Args:
-        query_db: Path to Foldseek-format database.
-        msa_input: Path to input MSA (AA FASTA).
-        msa_output: Path for refined MSA output.
-        refine_iters: Number of refinement iterations.
-
-    Returns:
-        Path to the refined MSA.
-    """
-    foldmason = ExternalTool("foldmason")
-    foldmason.check_available()
-
-    args = [
-        "refinemsa",
-        str(query_db),
-        str(msa_input),
-        str(msa_output),
-        "--refine-iters", str(refine_iters),
-    ]
-
-    logger.info(f"Refining MSA with {refine_iters} iterations")
-    foldmason.run(args)
-
-    if not msa_output.exists():
-        raise RuntimeError(f"FoldMason refinement did not produce output: {msa_output}")
-
-    logger.info(f"Refined MSA written to {msa_output}")
-    return msa_output
-
-
 def write_alignment_summary(
     result: FoldMasonResult,
     output_path: Path,
-    refined: bool = False,
 ) -> Path:
     """Write alignment summary as JSON.
 
     Args:
         result: FoldMasonResult from alignment.
         output_path: Output directory.
-        refined: Whether the alignment was refined.
 
     Returns:
         Path to summary JSON file.
@@ -162,7 +123,6 @@ def write_alignment_summary(
         "aa_msa": str(result.aa_msa),
         "three_di_msa": str(result.three_di_msa),
         "guide_tree": str(result.guide_tree),
-        "refined": refined,
         "mode": "fastMode (no coordinates, 3Di+AA only)",
     }
 

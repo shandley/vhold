@@ -8,7 +8,6 @@ from vhold.features.confidence import apply_confidence_mask
 from vhold.features.foldseek import create_query_db
 from vhold.features.foldmason import (
     run_foldmason_msa,
-    run_foldmason_refine,
     write_alignment_summary,
 )
 from vhold.features.prostt5 import ProstT5Predictor
@@ -36,8 +35,7 @@ def run_align(
     2. Predict 3Di with ProstT5 (or load from predictions_dir)
     3. Create Foldseek-format database (AA + 3Di, no coordinates)
     4. Run FoldMason structuremsa (fastMode — 3Di+AA alignment)
-    5. Optionally refine the alignment
-    6. Output AA MSA, 3Di MSA, and guide tree
+    5. Output AA MSA, 3Di MSA, and guide tree
 
     Args:
         input_file: Input FASTA file with protein sequences
@@ -47,10 +45,17 @@ def run_align(
         fast: Use greedy decoding for ProstT5
         confidence_threshold: Threshold for 3Di confidence masking
         model_dir: ProstT5 model cache directory
-        refine_iters: Number of FoldMason refinement iterations (0 = skip)
+        refine_iters: Ignored. FoldMason refinement requires C-alpha
+            coordinates not available in ProstT5 coordinate-free mode.
         predictions_dir: Pre-computed 3Di predictions directory (skip ProstT5)
     """
     setup_logging()
+
+    if refine_iters > 0:
+        logger.warning(
+            f"--refine-iters {refine_iters} ignored. FoldMason refinement requires "
+            "C-alpha coordinates, which are not available in ProstT5 coordinate-free mode."
+        )
 
     input_path = Path(input_file)
     output_path = Path(output_dir)
@@ -168,22 +173,6 @@ def run_align(
             threads=threads,
         )
 
-        # Optional refinement
-        refined = False
-        if refine_iters > 0:
-            logger.info("")
-            logger.info(f"Step 4: Refining alignment ({refine_iters} iterations)...")
-            refined_path = tmp_path / "refined_aa.fa"
-            run_foldmason_refine(
-                query_db=query_db,
-                msa_input=msa_result.aa_msa,
-                msa_output=refined_path,
-                refine_iters=refine_iters,
-            )
-            # Replace the AA MSA with the refined version
-            shutil.copy2(refined_path, msa_result.aa_msa)
-            refined = True
-
         # Copy results to output directory
         final_aa = output_path / "alignment_aa.fa"
         final_3di = output_path / "alignment_3di.fa"
@@ -201,7 +190,7 @@ def run_align(
         msa_result.guide_tree = final_tree
 
     # Write summary
-    summary_path = write_alignment_summary(msa_result, output_path, refined=refined)
+    summary_path = write_alignment_summary(msa_result, output_path)
 
     logger.info("")
     logger.info("=" * 60)
@@ -209,7 +198,6 @@ def run_align(
     logger.info("=" * 60)
     logger.info(f"Sequences aligned: {msa_result.num_sequences}")
     logger.info(f"Alignment length: {msa_result.alignment_length} columns")
-    logger.info(f"Refined: {refined}")
     logger.info(f"AA MSA: {final_aa}")
     logger.info(f"3Di MSA: {final_3di}")
     logger.info(f"Guide tree: {final_tree}")
