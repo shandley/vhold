@@ -148,3 +148,22 @@ def get_foldseek() -> ExternalTool:
     tool = ExternalTool("foldseek")
     tool.check_available()
     return tool
+
+
+def check_foldmason() -> tuple[bool, str | None]:
+    """Check if FoldMason is available and return its version.
+
+    Returns:
+        Tuple of (is_available, version_string)
+    """
+    tool = ExternalTool("foldmason")
+    if not tool.available:
+        return False, None
+    return True, tool.version()
+
+
+def get_foldmason() -> ExternalTool:
+    """Get a FoldMason tool instance, checking availability."""
+    tool = ExternalTool("foldmason")
+    tool.check_available()
+    return tool

@@ -335,5 +335,91 @@ def run(
     )
 
 
+@main.command()
+@click.option(
+    "-i", "--input",
+    "input_file",
+    required=True,
+    type=click.Path(exists=True),
+    help="Input FASTA file with protein sequences",
+)
+@click.option(
+    "-o", "--output",
+    required=True,
+    type=click.Path(),
+    help="Output directory for alignment results",
+)
+@click.option(
+    "-t", "--threads",
+    default=4,
+    type=int,
+    help="Number of threads for FoldMason (default: 4)",
+)
+@click.option(
+    "--device",
+    type=click.Choice(["auto", "cuda", "mps", "cpu"]),
+    default="auto",
+    help="Device for ProstT5 inference (default: auto)",
+)
+@click.option(
+    "--fast",
+    is_flag=True,
+    default=False,
+    help="Use greedy decoding for ProstT5 (~3x faster)",
+)
+@click.option(
+    "--confidence-threshold",
+    default=0.7,
+    type=float,
+    help="Minimum confidence for 3Di residues (default: 0.7)",
+)
+@click.option(
+    "--model-dir",
+    type=click.Path(),
+    default=None,
+    help="Directory for ProstT5 model cache",
+)
+@click.option(
+    "--refine-iters",
+    default=0,
+    type=int,
+    help="Number of FoldMason refinement iterations (default: 0, skip)",
+)
+@click.option(
+    "--predictions-dir",
+    type=click.Path(exists=True),
+    default=None,
+    help="Pre-computed 3Di predictions directory (skip ProstT5 step)",
+)
+def align(input_file, output, threads, device, fast, confidence_threshold,
+          model_dir, refine_iters, predictions_dir):
+    """Multiple structural alignment of viral protein families.
+
+    Predicts 3Di structural sequences using ProstT5, then runs FoldMason
+    to produce a multiple structural alignment. Works without 3D coordinates
+    by using FoldMason's fastMode (3Di+AA string alignment).
+
+    Requires FoldMason: conda install -c bioconda foldmason
+
+    Examples:
+
+        vhold align -i proteins.fasta -o alignment/ --fast
+
+        vhold align -i proteins.fasta --predictions-dir predictions/ -o alignment/
+    """
+    from vhold.subcommands.align import run_align
+    run_align(
+        input_file=input_file,
+        output_dir=output,
+        threads=threads,
+        device=device,
+        fast=fast,
+        confidence_threshold=confidence_threshold,
+        model_dir=model_dir,
+        refine_iters=refine_iters,
+        predictions_dir=predictions_dir,
+    )
+
+
 if __name__ == "__main__":
     main()
