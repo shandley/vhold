@@ -120,8 +120,8 @@ def llm_reclassify(
     """Reclassify proteins with unknown function using LLM.
 
     Only targets proteins where:
-    - classification_source == "keywords" AND functional_category == "unknown"
-    - Or if reclassify_all_keywords=True, all keyword-classified proteins
+    - classification_source in ("keywords", "embedding") AND functional_category == "unknown"
+    - Or if reclassify_all_keywords=True, all keyword/embedding-classified proteins
 
     Modifies ConsensusResult objects in-place.
 
@@ -158,7 +158,9 @@ def llm_reclassify(
     for query_id, result in annotations.items():
         if not result.is_annotated:
             continue
-        if result.classification_source != "keywords":
+        # Target keyword-classified and embedding-classified proteins
+        eligible_source = result.classification_source in ("keywords", "embedding")
+        if not eligible_source:
             continue
         if not reclassify_all_keywords and result.functional_category != "unknown":
             continue
@@ -175,14 +177,18 @@ def llm_reclassify(
 
     reclassified = 0
     for query_id, result in candidates.items():
-        # Extract organism from query_id if possible (e.g., "NP_112023.1|Nipah")
+        # Extract organism: prefer annotation metadata, fall back to query_id
         organism = None
-        if "|" in query_id:
+        if result.primary_annotation:
+            organism = result.primary_annotation.get("organism")
+        if not organism and "|" in query_id:
             parts = query_id.split("|")
             if len(parts) >= 2:
                 organism = parts[1]
 
-        gene = result.primary_annotation.get("gene")
+        gene = None
+        if result.primary_annotation:
+            gene = result.primary_annotation.get("gene")
 
         # Layer 3: Per-protein error handling
         try:

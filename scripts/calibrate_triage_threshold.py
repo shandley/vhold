@@ -152,11 +152,11 @@ def load_foldseek_results(tsv_path: Path) -> dict[str, dict]:
 
 def get_triage_annotation(
     target_id: str, source_db: str, db_dir: Path | None
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     """Get annotation and category for a triage match.
 
     Returns:
-        Tuple of (description, functional_category).
+        Tuple of (description, functional_category, full_annotation_dict).
     """
     annotation = _lookup_annotation(target_id, source_db, db_dir, _metadata_cache={})
     description = annotation.get("description", "hypothetical protein")
@@ -170,7 +170,7 @@ def get_triage_annotation(
         superfamily=annotation.get("superfamily"),
     )
     category = classify_protein(description, gene, evidence=evidence)
-    return description, category
+    return description, category, annotation
 
 
 def evaluate_threshold(
@@ -181,6 +181,8 @@ def evaluate_threshold(
     ground_truth: dict[str, str],
     foldseek_results: dict[str, dict],
     db_dir: Path | None,
+    llm_client=None,
+    llm_model: str = "claude-haiku-4-5-20251001",
 ) -> dict:
     """Evaluate a single threshold against ground truth and Foldseek.
 
@@ -191,6 +193,7 @@ def evaluate_threshold(
         correct_vs_foldseek: matches where triage category == Foldseek category
         wrong_vs_foldseek: matches where triage != Foldseek
         false_positives: list of (query_id, triage_cat, gt_cat, similarity, description)
+        llm_reclassified: number of proteins reclassified by LLM
     """
     matches = embedding_db.search(
         query_embeddings=query_embeddings,
@@ -204,6 +207,7 @@ def evaluate_threshold(
     correct_fs = 0
     wrong_fs = 0
     false_positives = []
+    llm_reclassified = 0
 
     gt_keys = set(ground_truth.keys())
     fs_keys = set(foldseek_results.keys())
@@ -212,9 +216,32 @@ def evaluate_threshold(
         if not match_list:
             continue
         best = match_list[0]
-        description, triage_cat = get_triage_annotation(
+        description, triage_cat, annotation = get_triage_annotation(
             best.target_id, best.source_db, db_dir
         )
+
+        # LLM reclassification for unknowns
+        if triage_cat == "unknown" and llm_client is not None:
+            from vhold.results.llm_classify import classify_single
+            organism = annotation.get("organism")
+            if not organism and "|" in qid:
+                parts = qid.split("|")
+                if len(parts) >= 2:
+                    organism = parts[1]
+            gene = annotation.get("gene")
+            try:
+                llm_cat, reasoning = classify_single(
+                    client=llm_client,
+                    description=description,
+                    gene=gene,
+                    organism=organism,
+                    model=llm_model,
+                )
+                if llm_cat != "unknown":
+                    triage_cat = llm_cat
+                    llm_reclassified += 1
+            except Exception as e:
+                pass  # Keep keyword classification on LLM error
 
         # Compare vs ground truth (with ID normalization)
         gt_key = _normalize_id(qid, gt_keys)
@@ -244,6 +271,7 @@ def evaluate_threshold(
         "correct_vs_foldseek": correct_fs,
         "wrong_vs_foldseek": wrong_fs,
         "false_positives": false_positives,
+        "llm_reclassified": llm_reclassified,
     }
 
 
@@ -311,6 +339,16 @@ def main():
         default=None,
         help="Output TSV file for detailed results (optional)",
     )
+    parser.add_argument(
+        "--llm-classify",
+        action="store_true",
+        help="Use Claude to reclassify 'unknown' triage results (requires ANTHROPIC_API_KEY)",
+    )
+    parser.add_argument(
+        "--llm-model",
+        default="claude-haiku-4-5-20251001",
+        help="Claude model for LLM reclassification",
+    )
     args = parser.parse_args()
 
     # Load embedding database
@@ -334,6 +372,21 @@ def main():
     )
     extractor.load_model()
     print("  Encoder ready")
+
+    # Initialize LLM client if requested
+    llm_client = None
+    if args.llm_classify:
+        import os
+        try:
+            import anthropic
+            key = os.environ.get("ANTHROPIC_API_KEY")
+            if key:
+                llm_client = anthropic.Anthropic(api_key=key)
+                print(f"\n  LLM reclassification enabled (model: {args.llm_model})")
+            else:
+                print("\n  WARNING: --llm-classify requested but ANTHROPIC_API_KEY not set")
+        except ImportError:
+            print("\n  WARNING: --llm-classify requested but anthropic package not installed")
 
     # Process each case study
     all_per_threshold = defaultdict(lambda: defaultdict(int))
@@ -384,6 +437,8 @@ def main():
             result = evaluate_threshold(
                 ids, embeddings, embedding_db, thresh,
                 ground_truth, foldseek_results, db_dir=None,
+                llm_client=llm_client,
+                llm_model=args.llm_model,
             )
             cs_results[thresh] = result
 
