@@ -29,6 +29,7 @@ FUNCTIONAL_CATEGORIES = {
         "virion",
         "glycoprotein",
         "membrane protein",
+        "membrane-associated",  # Viro3D: "membrane-associated protein" (e.g., Ebola VP24)
         "nucleocapsid",
         "nucleoprotein",  # Ebola NP, Rabies N, paramyxovirus N
         "tegument",
@@ -37,7 +38,9 @@ FUNCTIONAL_CATEGORIES = {
         "maturation",  # Maturation proteins
         "fusion protein",  # Paramyxovirus F proteins (class I fusion)
         "fusion glycoprotein",  # Viral fusion glycoproteins
+        "fusion",  # Bare "fusion" from Viro3D (always means fusion protein in viral context)
         "attachment",  # Attachment glycoproteins (e.g., Nipah G, HN proteins)
+        "structural polyprotein",  # Alphavirus structural polyprotein
     ],
     "replication": [
         "polymerase",
@@ -54,6 +57,7 @@ FUNCTIONAL_CATEGORIES = {
     ],
     "protease": [
         "protease",
+        "proteinase",  # Synonym (e.g., "3C-like proteinase")
         "peptidase",
         "maturase",
         "3cl",
@@ -93,6 +97,9 @@ FUNCTIONAL_CATEGORIES = {
         "translation enhancer",  # e.g., Rotavirus NSP3
         "translation effector",  # e.g., Rotavirus NSP3
         "effector protein",  # General effector proteins
+        "leader protein",  # Coronavirus nsp1/leader protein
+        "v protein",  # Paramyxovirus V protein (IFN antagonist / regulatory)
+        "nonstructural protein",  # Generic nonstructural proteins (regulatory role)
     ],
     "movement": [
         "movement",
@@ -119,6 +126,7 @@ UNKNOWN_TERMS = [
     "unknown",
     "duf",
     "unipr",
+    "deleted",  # UniProt entries that have been removed
 ]
 
 # =============================================================================

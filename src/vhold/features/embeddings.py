@@ -478,10 +478,19 @@ def build_embedding_consensus_results(
             _metadata_cache={},
         )
 
-        # Classify using keywords
+        # Classify using all available evidence
         description = annotation.get("description", "hypothetical protein")
         gene = annotation.get("gene")
-        category = classify_protein(description, gene)
+
+        # Build evidence from enriched annotation fields
+        from vhold.results.categories import AnnotationEvidence
+        evidence = AnnotationEvidence(
+            pfam=annotation.get("pfam"),
+            go_bp=annotation.get("go_bp"),
+            go_mf=annotation.get("go_mf"),
+            superfamily=annotation.get("superfamily"),
+        )
+        category = classify_protein(description, gene, evidence=evidence)
 
         # Map similarity to consensus score (0.95-1.0 → 0.85-1.0)
         consensus_score = min(1.0, best_match.similarity * 0.95 + 0.05)
@@ -548,10 +557,19 @@ def _lookup_annotation(
                 logger.warning(f"Could not load BFVD metadata: {e}")
                 _metadata_state["bfvd_metadata"] = pd.DataFrame()
 
+        if "bfvd_enriched" not in _metadata_state:
+            try:
+                from vhold.databases.bfvd import load_bfvd_enriched_metadata
+                _metadata_state["bfvd_enriched"] = load_bfvd_enriched_metadata(db_dir)
+            except Exception as e:
+                logger.debug(f"Enriched BFVD metadata not available: {e}")
+                _metadata_state["bfvd_enriched"] = {}
+
         metadata = _metadata_state["bfvd_metadata"]
+        enriched = _metadata_state["bfvd_enriched"]
         if len(metadata) > 0:
             from vhold.databases.bfvd import get_bfvd_annotation
-            ann = get_bfvd_annotation(target_id, metadata)
+            ann = get_bfvd_annotation(target_id, metadata, enriched_metadata=enriched)
             if ann:
                 return ann
 

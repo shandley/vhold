@@ -100,6 +100,10 @@ DEFAULT_MAX_SEQS = 1000
 DEFAULT_CONFIDENCE_THRESHOLD = 0.7
 
 # Embedding triage
-DEFAULT_TRIAGE_THRESHOLD = 0.95
+# Calibrated via scripts/calibrate_triage_threshold.py across 85 proteins
+# in 4 case studies. Precision is ~78% at any threshold (limited by annotation
+# quality, not match quality). Threshold 0.90 gives 100% recall with min
+# similarity of 0.904 across all test proteins.
+DEFAULT_TRIAGE_THRESHOLD = 0.90
 EMBEDDING_DIM = 1024
 EMBEDDING_DB_FILE = "vhold_embeddings.npz"
