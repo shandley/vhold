@@ -1,6 +1,6 @@
 # Embedding-Based Triage for vHold
 
-Last updated: 2026-02-13
+Last updated: 2026-02-14
 
 ## Problem
 
@@ -92,42 +92,26 @@ Merge results with provenance
 | ProstT5 model | Required | Required (encoder reused) |
 | numpy | Required | Required (cosine similarity) |
 | Foldseek | Required | Required (for grey/dark matter) |
-| Embedding database | -- | New download (~1-2 GB) |
+| Embedding database | -- | New download (822 MB) |
 | faiss-cpu | -- | Optional (large batch optimization) |
 | MMseqs2 / DIAMOND | -- | Not needed |
 
-## Open Questions Requiring Empirical Testing
+## Empirical Answers (from calibration across 85 proteins, 4 case studies)
 
-### 1. Similarity threshold calibration
-What cosine similarity threshold separates "can transfer annotation" from "needs structural search"? This requires:
-- Computing embeddings for proteins with known pairwise identities
-- Mapping cosine similarity to approximate sequence identity ranges
-- Determining the threshold where annotation transfer is reliable
-- Possibly different thresholds for different confidence levels
+### 1. Similarity threshold: 0.90 is optimal
+Calibrated across SARS-CoV-2 (18), remote homology (10), metagenomic dark matter (30), and eukaryotic viruses (27). At threshold 0.90: 100% recall (all 85 test proteins have similarity >= 0.904), 83.5% precision, F1=0.910. Higher thresholds (0.95, 0.97) sacrifice recall without meaningful precision gains. Lower thresholds (0.80, 0.85) add no recall but may introduce noise on other datasets. A single threshold works well across all case studies — no need for per-category thresholds.
 
-### 2. ProstT5 vs ProtT5 encoder behavior
-ProstT5 was fine-tuned from ProtT5 for AA-to-3Di translation. The fine-tuning may have shifted the encoder representations. Questions:
-- Do ProstT5 encoder embeddings cluster proteins as well as vanilla ProtT5?
-- Is there a meaningful difference for homology detection?
-- Should we use ProstT5 (already loaded) or the encoder-only ProtT5 model (separate download)?
+### 2. ProstT5 encoder works well — no need for separate ProtT5
+ProstT5 encoder embeddings produce biologically sensible clusters. Related proteins (e.g., spike proteins, polymerases) cluster together with high cosine similarity. The fine-tuning did not degrade embedding quality for homology detection. Using ProstT5 avoids a separate model download and reuses the model already loaded for 3Di prediction.
 
-### 3. CPU performance of encoder-only inference
-The 0.1s/protein GPU benchmark is from the literature. We need to measure:
-- Encoder-only forward pass time on Apple Silicon (MPS and CPU)
-- Scaling with sequence length (encoder is O(n) attention, not O(n^2) autoregressive)
-- Whether this is fast enough to make the triage step negligible compared to I/O
+### 3. CPU performance: 0.5-5s per protein on Apple M4
+Encoder-only inference on CPU: ~0.5s for short proteins (<100aa), ~5s for long proteins (~1000aa). For 85 test proteins, total encoder time was ~4.5 minutes. This is fast enough that triage adds negligible overhead compared to the decoder time it saves (minutes to hours per protein). The 59ms search time over 436K embeddings is negligible.
 
-### 4. Embedding quality for viral proteins specifically
-Most embedding benchmarks use general protein datasets. Viral proteins have unusual properties:
-- High mutation rates
-- Many disordered regions
-- Short accessory proteins with generic descriptions
-- Do embeddings capture functional similarity for these edge cases?
+### 4. Embedding quality: good for most viral proteins, weak for short accessory proteins
+Well-characterized structural proteins (spike, capsid, polymerase) match with high similarity (>0.95) and transfer correct annotations. Short accessory proteins (<100aa) with generic descriptions ("hypothetical protein", "ORF6 protein") match at lower similarity (0.90-0.95) and often get classified as "unknown" by keyword matching. LLM reclassification resolves most of these cases correctly.
 
-### 5. Integration with existing pipeline
-- Should triage be the default (`vhold run` always triages) or opt-in (`--triage`)?
-- What metrics to report for embedding matches vs structural search hits?
-- How to handle the case where embedding says "close match" but the user wants structural confirmation?
+### 5. Integration: opt-in via `--triage`, with `--llm-classify` for unknowns
+Triage is opt-in (`vhold run --triage`). The `--triage-threshold` flag allows overriding the default (0.90). Embedding matches are labeled with `classification_source: "embedding"` or `"llm:<model>"` in output. The full pipeline (decoder + Foldseek) is automatically skipped for proteins matched by triage. Users wanting structural confirmation can omit `--triage` to run the full pipeline.
 
 ## Relationship to Other Roadmap Items
 
@@ -141,16 +125,27 @@ It also complements:
 - **Fast mode (--fast)**: For proteins that DO need structural search, --fast reduces decoder time. Triage reduces the NUMBER of proteins going through the decoder.
 - **LLM classification (--llm-classify)**: Still applies as a post-processing step for functional category assignment on all annotated proteins regardless of method.
 
-## Expected Impact
+## Measured Impact
 
-For a typical viromics query of 1,000 viral proteins:
-- Current: ~1,000 ProstT5 predictions (hours to days on CPU)
-- With triage: ~100-400 ProstT5 predictions (the grey/dark matter fraction)
-- Estimated 2-5x overall speedup, with the improvement scaling with how well-characterized the input proteins are
+**SARS-CoV-2 end-to-end test** (18 proteins, `--triage --llm-classify`):
+- 18/18 proteins matched by embedding triage (100% at threshold 0.90)
+- Decoder + Foldseek steps completely skipped
+- Total runtime: ~4.5 minutes (vs ~45+ min without triage) = **~10x speedup**
+- LLM reclassified 6/10 unknown proteins correctly
+- Zero errors, zero dark matter
 
-For well-characterized virus proteomes (SARS-CoV-2, influenza, HIV): most proteins matched by embedding, minimal structural search needed.
+**Calibration across 85 proteins** (4 case studies):
 
-For novel metagenomic viruses: most proteins go through full structural search, triage provides modest speedup but correctly identifies the few with known homologs.
+| Configuration | Precision | F1 |
+|--------------|-----------|------|
+| Bare embeddings | 29.4% | — |
+| + Enriched BFVD metadata (345K UniProt) | 67.1% | 0.803 |
+| + Keyword classification fixes | 77.6% | 0.874 |
+| + LLM reclassification (Claude Haiku) | **83.5%** | **0.910** |
+
+For well-characterized virus proteomes (SARS-CoV-2, influenza, HIV): most proteins matched by embedding, decoder completely skipped.
+
+For novel metagenomic viruses: most proteins go through full structural search, triage correctly identifies the few with known homologs.
 
 ## Model Quantization: Accelerating What Remains
 

@@ -1,6 +1,6 @@
 # vHold Roadmap: Strategic Directions
 
-Last updated: 2026-02-13
+Last updated: 2026-02-14
 
 ## Context
 
@@ -169,6 +169,9 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 
 - **Embedding triage infrastructure**: ProstT5 encoder embedding DB complete (436K proteins, 822 MB, 59ms search). Subsumes BLAST pre-filtering (Direction 1) and pre-computed 3Di references (Direction 3) — see `docs/EMBEDDING_TRIAGE.md`.
 - **FoldMason integration (`vhold align`)**: Multiple structural alignment via ProstT5 → FoldMason fastMode bridge. Enables structural phylogenetics (Direction 6) as a practical tool. Note: refinement incompatible with coordinate-free mode (segfaults).
+- **Triage threshold calibration**: Empirical calibration across 85 proteins from 4 case studies. Optimal threshold: 0.90 (100% recall, 83.5% precision, F1=0.910). Enriched BFVD metadata (345K UniProt annotations) dramatically improved annotation transfer quality.
+- **End-to-end `--triage` wiring**: Full pipeline integration — embedding search → annotation transfer → keyword classification → LLM reclassification. CLI flags: `--triage` and `--triage-threshold`. Decoder + Foldseek steps automatically skipped when all proteins matched.
+- **LLM reclassification of triage unknowns**: Extended `--llm-classify` to reclassify embedding-matched proteins with "unknown" category. Claude Haiku correctly resolves accessory/regulatory proteins (e.g., SARS-CoV-2 ORF7a, ORF6, ORF3a → host_interaction). Improved precision from 77.6% to 83.5%.
 
 ## Updated Priority Ranking
 
@@ -176,9 +179,9 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 |---|-----------|-------|--------|--------|
 | 1 | ~~BLAST pre-filtering~~ | ~~High~~ | ~~Moderate~~ | **Superseded** by embedding triage |
 | 3 | ~~Pre-computed 3Di~~ | ~~High~~ | ~~Moderate~~ | **Superseded** by embedding triage |
-| -- | Triage threshold calibration | High | Low | **Do first** — embedding DB ready, need to calibrate threshold |
-| -- | Wire `--triage` end-to-end | High | Moderate | **Do second** — connect embedding search to annotation transfer |
-| 2 | Metagenomic integration | High | High | Do third |
+| -- | ~~Triage threshold calibration~~ | ~~High~~ | ~~Low~~ | **COMPLETE** — threshold 0.90, F1=0.910 |
+| -- | ~~Wire `--triage` end-to-end~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — `--triage` and `--llm-classify` working |
+| 2 | Metagenomic integration | High | High | **Next priority** |
 | 4 | Emerging pathogen workflow | High (niche) | Low | Do when packaging for release |
 | 5 | Structural novelty discovery | Medium-high | Moderate | Research feature, iterate |
 | 6 | Structural taxonomy | Medium | Moderate | **Partially enabled** by `vhold align` |
