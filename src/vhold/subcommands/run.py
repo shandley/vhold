@@ -31,7 +31,7 @@ def run_pipeline(
     llm_classify: bool = False,
     llm_model: str = "claude-haiku-4-5-20251001",
     triage: bool = False,
-    triage_threshold: float = 0.95,
+    triage_threshold: float = 0.90,
 ) -> None:
     """Run the full vhold annotation pipeline.
 

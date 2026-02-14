@@ -294,9 +294,9 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
 )
 @click.option(
     "--triage-threshold",
-    default=0.95,
+    default=0.90,
     type=float,
-    help="Cosine similarity threshold for embedding triage (default: 0.95)",
+    help="Cosine similarity threshold for embedding triage (default: 0.90)",
 )
 def run(
     input_file, output, database, databases, threads, batch_size, device,
