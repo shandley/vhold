@@ -1,6 +1,6 @@
 # vHold Project State - Claude Code Context
 
-Last updated: 2026-02-14
+Last updated: 2026-02-15
 
 ## Project Overview
 
@@ -135,17 +135,17 @@ Lightweight MLP trained on frozen ProstT5 encoder embeddings to classify viral p
 
 **Agreement filtering insight**: Text-based labels and structure-based predictions are complementary signals. Labels where both agree are high-quality; labels where they disagree are noisy. This principle could be applied iteratively.
 
-### Contrastive LoRA Fine-Tuning (`--lora/--no-lora`) -- COMPLETE
+### Contrastive LoRA Fine-Tuning (`--lora/--no-lora`) -- CODE COMPLETE, NEEDS CUDA
 
 Fine-tunes ProstT5 encoder with LoRA + supervised contrastive loss (SupCon-Hard, based on CLEAN, Yu et al. Science 2023) so that functionally similar viral proteins produce closer embeddings. Improves triage and classifier quality.
 
-**Status**: Code complete, integrated into pipeline. LoRA adapter auto-loaded and merged at inference (zero runtime overhead). Training not yet run.
+**Status**: Code complete, integrated into pipeline, unit tests pass. **Training requires CUDA GPU** -- MPS is too slow (~60 sec/batch, estimated 35+ hours for 1000 proteins). Adapter not yet produced.
 
 | Metric | Value |
 |--------|-------|
 | LoRA rank | 16 |
 | Target layers | Top 6 of 24 encoder layers (q + v attention) |
-| Trainable parameters | ~1.2M / ~583M total (~0.2%) |
+| Trainable parameters | 983,040 / 2,819,835,904 (0.03%) |
 | Adapter size | ~5 MB |
 | Loss | Multi-granularity: category (weight 0.7) + Pfam (weight 0.3) |
 | Temperature | 0.07 (category), 0.049 (Pfam) |
@@ -161,7 +161,16 @@ Fine-tunes ProstT5 encoder with LoRA + supervised contrastive loss (SupCon-Hard,
 - Gradient accumulation 4 steps, effective batch 256
 - Max sequence length 1024 tokens
 - Early stopping on MAP@1 (patience 3)
-- Estimated training time: 4-8 hours on Apple M4 (80K proteins, 10 epochs)
+
+**MPS training attempt results** (Apple M4, 24GB):
+- 1000 proteins (855 train / 145 val), batch_size=8, seq_length=512
+- Model loading: ~25 min (11GB pytorch_model.bin deserialization)
+- Per-batch speed: ~60 sec (forward through 24 encoder layers + backward through 6 LoRA layers)
+- Batch 50/432 loss=0.9844 after ~49 min of training
+- Estimated epoch time: ~7 hours; 5 epochs: ~35 hours
+- **Verdict**: Impractical on MPS. Needs CUDA A100/H100 where batches would be ~5-10 sec
+
+**Cost-benefit assessment**: Current triage achieves 83.5% precision / 100% recall / F1=0.910 without contrastive fine-tuning. Remaining 14 false positives are annotation quality issues (deleted UniProt entries, UniParc-only IDs), not embedding quality. Marginal improvement from contrastive training (~2-7% precision) does not justify the compute cost on available hardware.
 
 **Integration**: `EmbeddingExtractor.load_model()` auto-detects installed adapter, loads via peft, and calls `merge_and_unload()` to permanently fuse weights. Falls back gracefully if peft not installed or adapter corrupt. Disable with `--no-lora`.
 
@@ -233,7 +242,7 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 - **Embedding DB not downloadable**: `EMBEDDING_DB_URL = None` in `databases/embeddings.py`. Users must generate locally via `scripts/build_embedding_db.py` or place manually at `~/.vhold/databases/embeddings/vhold_embeddings.npz`.
 - **Enriched BFVD metadata not downloadable**: Must be copied manually from `bfvd-annotations` repo to `~/.vhold/databases/bfvd/bfvd_metadata_enriched.tsv`.
 - **Classifier model not downloadable**: Must be trained locally via `scripts/train_classifier.py` or placed manually at `~/.vhold/models/classifier/vhold_classifier.pt`.
-- **LoRA adapter not yet trained**: Code complete but adapter not yet produced. Run `scripts/train_contrastive.py` to train.
+- **LoRA adapter not yet trained**: Code complete but training requires CUDA GPU. MPS too slow (~60 sec/batch). Run on A100/H100: `scripts/train_contrastive.py --device cuda`.
 - **ONNX export not yet validated**: Code complete but not tested end-to-end. Run `vhold export-onnx` then `scripts/validate_onnx_quantization.py`.
 
 ## Remaining Work
@@ -242,7 +251,7 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 - **Host embedding DB**: Upload 822 MB .npz to Zenodo/S3, set `EMBEDDING_DB_URL` in `databases/embeddings.py`
 - **Host enriched BFVD metadata**: Bundle with embedding DB or host separately, wire into `vhold install`
 - **Host classifier model**: Bundle 2.6 MB checkpoint with embedding DB or host separately
-- **Train contrastive LoRA adapter**: Run `scripts/train_contrastive.py`, evaluate, rebuild embedding DB
+- **Train contrastive LoRA adapter** (deferred -- needs CUDA): Code ready, run on A100/H100. Marginal value at current stage (83.5% precision limited by annotation quality, not embedding quality)
 - **Validate ONNX export**: Run export + validation script on target hardware
 - **Tests for triage + LLM + classifier integration**: End-to-end test with `--triage --classify --llm-classify`
 

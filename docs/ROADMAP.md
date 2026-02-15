@@ -1,6 +1,6 @@
 # vHold Roadmap: Strategic Directions
 
-Last updated: 2026-02-14
+Last updated: 2026-02-15
 
 ## Context
 
@@ -174,6 +174,7 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 - **Triage threshold calibration**: Empirical calibration across 85 proteins from 4 case studies. Optimal threshold: 0.90 (100% recall, 83.5% precision, F1=0.910). Enriched BFVD metadata (345K UniProt annotations) dramatically improved annotation transfer quality.
 - **End-to-end `--triage` wiring**: Full pipeline integration — embedding search → annotation transfer → keyword classification → LLM reclassification. CLI flags: `--triage` and `--triage-threshold`. Decoder + Foldseek steps automatically skipped when all proteins matched.
 - **LLM reclassification of triage unknowns**: Extended `--llm-classify` to reclassify embedding-matched proteins with "unknown" category. Claude Haiku correctly resolves accessory/regulatory proteins (e.g., SARS-CoV-2 ORF7a, ORF6, ORF3a → host_interaction). Improved precision from 77.6% to 83.5%.
+- **Contrastive LoRA fine-tuning code**: Complete implementation of SupCon-Hard + multi-granularity contrastive loss, CategoryBalancedSampler, LoRA integration into EmbeddingExtractor with `merge_and_unload()`. Training scripts, evaluation scripts, and embedding DB rebuild script all written and tested. **Training deferred** — MPS too slow (~60 sec/batch, 35+ hours for 1000 proteins). Needs CUDA GPU. Cost-benefit analysis: remaining triage precision errors are annotation quality issues (deleted UniProt entries), not embedding quality. Marginal improvement (~2-7% precision) doesn't justify compute on available hardware.
 
 ## Updated Priority Ranking
 
@@ -186,7 +187,7 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 | -- | ~~MLP functional classifier~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — macro F1 0.692, `--classify` in pipeline |
 | 2 | Metagenomic integration | High | High | **Next priority** |
 | -- | Iterative label refinement | Medium | Low | Use v3 as filter for another agreement round |
-| -- | Contrastive encoder fine-tuning | High | High | Would improve both triage and classifier |
+| -- | Contrastive encoder fine-tuning | Medium | High | **Code complete, deferred** — needs CUDA GPU; marginal value at current precision |
 | 4 | Emerging pathogen workflow | High (niche) | Low | Do when packaging for release |
 | 5 | Structural novelty discovery | Medium-high | Moderate | Research feature, iterate |
 | 6 | Structural taxonomy | Medium | Moderate | **Partially enabled** by `vhold align` |

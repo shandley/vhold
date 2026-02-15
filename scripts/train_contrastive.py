@@ -21,13 +21,24 @@ Usage:
 """
 
 import argparse
+import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import time
 from collections import Counter
 from pathlib import Path
+
+# Force truly unbuffered stdout for file/pipe redirection
+if not sys.stdout.isatty():
+    sys.stdout = io.TextIOWrapper(
+        open(sys.stdout.fileno(), "wb", 0), write_through=True
+    )
+    sys.stderr = io.TextIOWrapper(
+        open(sys.stderr.fileno(), "wb", 0), write_through=True
+    )
 
 import numpy as np
 import torch
@@ -512,6 +523,7 @@ def train_epoch(
     n_batches = 0
     optimizer.zero_grad()
 
+    n_total_batches = len(dataloader)
     for batch_idx, batch in enumerate(dataloader):
         input_ids = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
@@ -540,6 +552,16 @@ def train_epoch(
         total_cat_loss += details["category_loss"]
         total_pfam_loss += details["pfam_loss"]
         n_batches += 1
+
+        # Progress logging every 50 batches (write directly to file)
+        if (batch_idx + 1) % 50 == 0:
+            avg = total_loss / n_batches
+            msg = f"  batch {batch_idx+1}/{n_total_batches} loss={avg:.4f}"
+            print(msg, flush=True)
+            # Write to progress file directly (bypasses stdout buffering)
+            progress_file = Path(os.environ.get("TRAIN_PROGRESS", "/tmp/train_progress.log"))
+            with open(progress_file, "a") as pf:
+                pf.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
 
     # Handle remaining gradients
     if n_batches % gradient_accumulation_steps != 0:
@@ -871,8 +893,8 @@ def main():
     history = []
 
     header = f"{'Epoch':>5} {'Loss':>8} {'CatLoss':>8} {'PfamLoss':>9} {'ValLoss':>8} {'MAP@1':>7} {'IntraCos':>9} {'InterCos':>9} {'LR':>10}"
-    print(header)
-    print("-" * len(header))
+    print(header, flush=True)
+    print("-" * len(header), flush=True)
 
     for epoch in range(1, args.epochs + 1):
         epoch_start = time.time()
@@ -889,7 +911,7 @@ def main():
         current_lr = scheduler.get_last_lr()[0]
         epoch_time = time.time() - epoch_start
 
-        print(
+        epoch_msg = (
             f"{epoch:>5} "
             f"{train_stats['avg_loss']:>8.4f} "
             f"{train_stats['category_loss']:>8.4f} "
@@ -901,6 +923,11 @@ def main():
             f"{current_lr:>10.2e} "
             f"({epoch_time:.0f}s)"
         )
+        print(epoch_msg, flush=True)
+        # Write epoch summary to progress file
+        progress_file = Path(os.environ.get("TRAIN_PROGRESS", "/tmp/train_progress.log"))
+        with open(progress_file, "a") as pf:
+            pf.write(f"{time.strftime('%H:%M:%S')} EPOCH {epoch_msg}\n")
 
         history.append({
             "epoch": epoch,
@@ -923,7 +950,7 @@ def main():
             # Save best adapter
             adapter_dir = output_dir / "best_adapter"
             model.save_pretrained(adapter_dir)
-            print(f"  -> Saved best adapter (MAP@1={best_map1:.4f})")
+            print(f"  -> Saved best adapter (MAP@1={best_map1:.4f})", flush=True)
         else:
             epochs_without_improvement += 1
             if epochs_without_improvement >= args.patience:
