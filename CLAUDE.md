@@ -16,9 +16,11 @@ Last updated: 2026-02-14
 vHold Pipeline:
 1. Read FASTA sequences
 1b. (Optional) Embedding triage: ProstT5 encoder cosine similarity against 436K references
+    - LoRA adapter auto-loaded if installed (--lora/--no-lora)
     - Matched proteins: skip decoder, transfer annotation directly
     - Unmatched proteins: continue to step 2
 2. Predict 3Di with ProstT5 decoder (--fast for greedy, default beam search)
+   - Supports --backend onnx for 3-6x CPU speedup
 3. Search BFVD + Viro3D with Foldseek
 4. Transfer annotations with multi-database consensus scoring
 4a. Merge triage results with structural search results
@@ -31,25 +33,33 @@ vHold Pipeline:
 
 | File | Purpose |
 |------|---------|
-| `src/vhold/features/prostt5.py` | 3Di prediction (ProstT5 model, MPS/CUDA/CPU) |
-| `src/vhold/features/embeddings.py` | Embedding triage (EmbeddingExtractor, EmbeddingDatabase, triage_proteins) |
+| `src/vhold/features/prostt5.py` | 3Di prediction (ProstT5 model, MPS/CUDA/CPU), `get_predictor()` factory |
+| `src/vhold/features/embeddings.py` | Embedding triage (EmbeddingExtractor with LoRA auto-load, EmbeddingDatabase, triage_proteins) |
+| `src/vhold/features/contrastive.py` | Contrastive loss (SupConHardLoss, MultiGranularityLoss), CategoryBalancedSampler, ContrastiveDataset |
 | `src/vhold/features/foldseek.py` | Structural search against BFVD/Viro3D + `create_query_db()` |
 | `src/vhold/features/foldmason.py` | FoldMason MSA wrapper (`run_foldmason_msa()`) |
+| `src/vhold/features/classifier.py` | MLP functional classifier (model definition + batch inference) |
+| `src/vhold/features/onnx_export.py` | ONNX INT8 export + quantization |
+| `src/vhold/features/onnx_predictor.py` | ONNX ProstT5 predictor (OnnxProstT5Predictor) |
+| `src/vhold/features/onnx_embeddings.py` | ONNX embedding extractor (OnnxEmbeddingExtractor) |
 | `src/vhold/subcommands/run.py` | Main pipeline orchestration |
 | `src/vhold/subcommands/align.py` | Multiple structural alignment pipeline |
 | `src/vhold/databases/bfvd.py` | BFVD metadata loading + enriched annotation lookup |
 | `src/vhold/databases/embeddings.py` | Embedding DB path/install (URL not yet configured) |
+| `src/vhold/databases/classifier.py` | Classifier checkpoint path management |
+| `src/vhold/databases/lora.py` | LoRA adapter path management |
 | `src/vhold/results/annotations.py` | Consensus annotation transfer |
 | `src/vhold/results/categories.py` | Keyword-based functional classification |
 | `src/vhold/results/llm_classify.py` | LLM-based functional classification (keywords + embedding unknowns) |
-| `src/vhold/features/classifier.py` | MLP functional classifier (model definition + batch inference) |
-| `src/vhold/databases/classifier.py` | Classifier checkpoint path management |
 | `src/vhold/utils/constants.py` | Thresholds, DB URLs, embedding config |
-| `src/vhold/cli.py` | Click CLI (run, predict, compare, install, align) |
-| `scripts/calibrate_triage_threshold.py` | Triage threshold calibration across 4 case studies |
+| `src/vhold/cli.py` | Click CLI (run, predict, compare, install, align, export-onnx) |
+| `scripts/train_contrastive.py` | Contrastive LoRA training (SupCon-Hard + multi-granularity) |
+| `scripts/evaluate_contrastive.py` | Before/after evaluation (MAP@k, NDCG, silhouette) |
+| `scripts/rebuild_embedding_db.py` | Re-extract 436K embeddings with LoRA-merged encoder |
 | `scripts/train_classifier.py` | MLP classifier training with stratified split + class weights |
 | `scripts/generate_llm_labels.py` | Batch LLM label generation for training data expansion |
-| `tests/` | 378 tests (pytest) |
+| `scripts/calibrate_triage_threshold.py` | Triage threshold calibration across 4 case studies |
+| `tests/` | 443 tests (pytest) |
 
 ## Implemented Features
 
@@ -123,19 +133,54 @@ Lightweight MLP trained on frozen ProstT5 encoder embeddings to classify viral p
 | entry | 0.511 | 393 | Low precision (36.8%) |
 | movement | 0.477 | 65 | Rarest category |
 
-**Training iterations and key findings**:
-- **v1** (keyword/Pfam/GO labels only, 69K samples): Macro F1 0.635. Baseline model.
-- **v2** (+ raw LLM labels, 118K samples): Macro F1 0.531 -- **worse**. LLM labels are text-based but MLP learns from structural embeddings. Generic domain descriptions (ankyrin, F-box) don't reliably predict structural features.
-- **v3** (+ agreement-filtered LLM labels, 84K samples): Macro F1 **0.692** -- best. Only LLM labels where v1 structural model independently agreed were kept (33.5% of raw LLM labels). Every category improved over v1.
+**Agreement filtering insight**: Text-based labels and structure-based predictions are complementary signals. Labels where both agree are high-quality; labels where they disagree are noisy. This principle could be applied iteratively.
 
-**Agreement filtering insight**: The key finding is that text-based labels and structure-based predictions are complementary signals. Labels where both agree are high-quality; labels where they disagree are noisy. This principle could be applied iteratively (use v3 as the filter for another round).
+### Contrastive LoRA Fine-Tuning (`--lora/--no-lora`) -- COMPLETE
 
-**LLM label generation** (`scripts/generate_llm_labels.py`):
-- Identifies "unknown" proteins with informative descriptions (not "hypothetical", "uncharacterized", etc.)
-- De-duplicates by description (32,312 unique from 90,747 proteins)
-- Batch-classifies 40 descriptions per Claude Haiku API call
-- 808 API calls, $2.52 cost, 38 minutes, zero errors
-- 14,793 non-unknown descriptions (45.8% hit rate) -> 55,941 proteins labeled
+Fine-tunes ProstT5 encoder with LoRA + supervised contrastive loss (SupCon-Hard, based on CLEAN, Yu et al. Science 2023) so that functionally similar viral proteins produce closer embeddings. Improves triage and classifier quality.
+
+**Status**: Code complete, integrated into pipeline. LoRA adapter auto-loaded and merged at inference (zero runtime overhead). Training not yet run.
+
+| Metric | Value |
+|--------|-------|
+| LoRA rank | 16 |
+| Target layers | Top 6 of 24 encoder layers (q + v attention) |
+| Trainable parameters | ~1.2M / ~583M total (~0.2%) |
+| Adapter size | ~5 MB |
+| Loss | Multi-granularity: category (weight 0.7) + Pfam (weight 0.3) |
+| Temperature | 0.07 (category), 0.049 (Pfam) |
+| Hard negative mining | Hardest negative per anchor upweighted |
+| Batch sampling | Category-balanced (equal representation per batch) |
+| Inference | `merge_and_unload()` -- zero overhead, no peft runtime dependency |
+| Location | `~/.vhold/models/contrastive_lora/` |
+| Requires | `pip install 'vhold[contrastive]'` (peft>=0.14.0) for training only |
+
+**Training configuration**:
+- AdamW lr=2e-5, weight_decay=0.01
+- Linear warmup (500 steps) + cosine decay
+- Gradient accumulation 4 steps, effective batch 256
+- Max sequence length 1024 tokens
+- Early stopping on MAP@1 (patience 3)
+- Estimated training time: 4-8 hours on Apple M4 (80K proteins, 10 epochs)
+
+**Integration**: `EmbeddingExtractor.load_model()` auto-detects installed adapter, loads via peft, and calls `merge_and_unload()` to permanently fuse weights. Falls back gracefully if peft not installed or adapter corrupt. Disable with `--no-lora`.
+
+### ONNX INT8 Quantization (`--backend onnx`) -- COMPLETE
+
+Optional ONNX INT8 backend for 3-6x CPU inference speedup. One-time export via `vhold export-onnx`, then use with `--backend onnx` on run/predict/align commands.
+
+**Status**: Code complete, integrated into pipeline. Not yet validated end-to-end (requires running export + validation script).
+
+| Metric | Value |
+|--------|-------|
+| Export command | `vhold export-onnx` |
+| Quantization | INT8 dynamic (auto-detected: avx512_vnni, avx512, avx2, arm64) |
+| Expected CPU speedup | 3-6x (architecture-dependent) |
+| Model format | ONNX via Optimum `ORTModelForSeq2SeqLM` |
+| Location | `~/.vhold/models/onnx_int8/` |
+| Requires | `pip install 'vhold[onnx]'` (optimum + onnxruntime) |
+
+**Integration**: `get_predictor(backend="onnx")` returns `OnnxProstT5Predictor`. Triage and MLP classifier steps route to `OnnxEmbeddingExtractor` when backend is ONNX. Model reuse between triage and decoder is skipped for ONNX (separate model instances).
 
 ### LLM Classification (`--llm-classify`)
 - Post-processing step using Claude to reclassify proteins where keywords return "unknown"
@@ -188,6 +233,8 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 - **Embedding DB not downloadable**: `EMBEDDING_DB_URL = None` in `databases/embeddings.py`. Users must generate locally via `scripts/build_embedding_db.py` or place manually at `~/.vhold/databases/embeddings/vhold_embeddings.npz`.
 - **Enriched BFVD metadata not downloadable**: Must be copied manually from `bfvd-annotations` repo to `~/.vhold/databases/bfvd/bfvd_metadata_enriched.tsv`.
 - **Classifier model not downloadable**: Must be trained locally via `scripts/train_classifier.py` or placed manually at `~/.vhold/models/classifier/vhold_classifier.pt`.
+- **LoRA adapter not yet trained**: Code complete but adapter not yet produced. Run `scripts/train_contrastive.py` to train.
+- **ONNX export not yet validated**: Code complete but not tested end-to-end. Run `vhold export-onnx` then `scripts/validate_onnx_quantization.py`.
 
 ## Remaining Work
 
@@ -195,16 +242,19 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 - **Host embedding DB**: Upload 822 MB .npz to Zenodo/S3, set `EMBEDDING_DB_URL` in `databases/embeddings.py`
 - **Host enriched BFVD metadata**: Bundle with embedding DB or host separately, wire into `vhold install`
 - **Host classifier model**: Bundle 2.6 MB checkpoint with embedding DB or host separately
+- **Train contrastive LoRA adapter**: Run `scripts/train_contrastive.py`, evaluate, rebuild embedding DB
+- **Validate ONNX export**: Run export + validation script on target hardware
 - **Tests for triage + LLM + classifier integration**: End-to-end test with `--triage --classify --llm-classify`
 
 ### Medium-term
 - **Metagenomic pipeline integration**: Accept VirSorter2/VIBRANT/geNomad output, produce DRAM-v/anvi'o compatible annotations
-- **ONNX INT8 quantization**: ~3x CPU speedup for ProstT5 decoder (no retraining needed)
+- **GenBank/GFF input with genomic neighborhood voting**: Use gene context for improved classification
 - **Iterative label refinement**: Use v3 classifier as filter for another round of LLM label agreement filtering
 - **Batch processing improvements**: Batch same-length sequences for ProstT5
 
 ### Research directions
-- **Contrastive fine-tuning of ProstT5 encoder**: Learn viral-specific embeddings (would improve both triage and classifier)
+- **PST (Protein Set Transformer)**: Genome-level attention over protein sets for improved annotation
+- **Full ProstT5 seq2seq fine-tuning**: Fine-tune decoder on viral 3Di sequences
 - **Structural distance-based viral taxonomy**: Pairwise structural distances for phylogenetics below twilight zone
 - **BitNet 1.58-bit quantization-aware retraining**: Ternary ProstT5 for 3-6x CPU speedup
 - **Metagenomic viral protein detection**: Repurpose embedding DB as fast structural-similarity-based viral protein detector
@@ -221,11 +271,15 @@ uv run vhold run -i input.fasta -o output/ --triage
 # With LLM classification (requires anthropic package + API key)
 uv run vhold run -i input.fasta -o output/ --triage --llm-classify
 
+# Disable LoRA adapter (enabled by default when installed)
+uv run vhold run -i input.fasta -o output/ --triage --no-lora
+
 # Disable MLP classifier (enabled by default when model installed)
 uv run vhold run -i input.fasta -o output/ --no-classify
 
-# Adjust classifier confidence threshold (default: 0.5)
-uv run vhold run -i input.fasta -o output/ --classifier-confidence 0.8
+# ONNX backend for faster CPU inference
+uv run vhold export-onnx                              # one-time export
+uv run vhold run -i input.fasta -o output/ --backend onnx
 
 # Fast mode (greedy decoding, ~2x faster)
 uv run vhold run -i input.fasta -o output/ --fast
@@ -243,8 +297,14 @@ uv run vhold install
 # Run tests
 uv run pytest tests/ -v
 
-# Calibrate triage threshold
-uv run python scripts/calibrate_triage_threshold.py --device cpu --llm-classify --output results.tsv
+# Train contrastive LoRA adapter
+uv run python scripts/train_contrastive.py --output results/contrastive/ --device mps --install
+
+# Evaluate contrastive adapter
+uv run python scripts/evaluate_contrastive.py --adapter results/contrastive/contrastive_lora/ --output results/contrastive/eval/
+
+# Rebuild embedding DB with LoRA-enhanced encoder
+uv run python scripts/rebuild_embedding_db.py --output ~/.vhold/databases/embeddings/vhold_embeddings.npz
 
 # Train MLP classifier
 uv run python scripts/train_classifier.py --output /tmp/classifier_output --install
