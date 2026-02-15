@@ -112,6 +112,9 @@ EMBEDDING_DB_FILE = "vhold_embeddings.npz"
 CLASSIFIER_MODEL_FILE = "vhold_classifier.pt"
 DEFAULT_CLASSIFIER_CONFIDENCE = 0.5
 
+# Contrastive LoRA adapter for ProstT5 encoder
+CONTRASTIVE_LORA_DIR = "contrastive_lora"
+
 # ONNX INT8 quantization
 ONNX_MODEL_DIR_NAME = "onnx_int8"
 

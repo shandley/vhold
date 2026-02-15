@@ -323,11 +323,16 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     default="torch",
     help="Inference backend (default: torch). ONNX requires: pip install vhold[onnx] && vhold export-onnx",
 )
+@click.option(
+    "--lora/--no-lora",
+    default=True,
+    help="Auto-load contrastive LoRA adapter if installed (default: yes)",
+)
 def run(
     input_file, output, database, databases, threads, batch_size, device,
     evalue, sensitivity, confidence_threshold, model_dir, prefix,
     fast, llm_classify, llm_model, triage, triage_threshold,
-    classify, classifier_confidence, backend,
+    classify, classifier_confidence, backend, lora,
 ):
     """Run the full vhold annotation pipeline.
 
@@ -361,6 +366,7 @@ def run(
         classify=classify,
         classifier_confidence=classifier_confidence,
         backend=backend,
+        use_lora=lora,
     )
 
 

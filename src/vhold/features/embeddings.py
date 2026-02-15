@@ -82,6 +82,7 @@ class EmbeddingExtractor:
         model: object | None = None,
         tokenizer: object | None = None,
         encoder_only: bool = True,
+        use_lora: bool = True,
     ):
         """Initialize embedding extractor.
 
@@ -92,12 +93,15 @@ class EmbeddingExtractor:
             tokenizer: Pre-loaded tokenizer
             encoder_only: If True, load only the encoder half (saves ~6.5GB).
                 If False, load full model so it can be reused for decoding.
+            use_lora: If True, auto-load contrastive LoRA adapter if installed.
+                The adapter is merged permanently (zero runtime overhead).
         """
         self.device = get_device(device)
         self.model_dir = model_dir or get_model_dir()
         self.model = model
         self.tokenizer = tokenizer
         self._encoder_only = encoder_only
+        self._use_lora = use_lora
         self._loaded = model is not None and tokenizer is not None
 
     def _run_encoder(self, input_ids: torch.Tensor, attention_mask: torch.Tensor):
@@ -141,6 +145,30 @@ class EmbeddingExtractor:
                     PROSTT5_MODEL_NAME,
                     cache_dir=model_dir,
                 )
+            # Auto-load contrastive LoRA adapter if installed
+            if self._use_lora:
+                try:
+                    from vhold.databases.lora import check_lora_adapter, get_lora_adapter_path
+
+                    if check_lora_adapter(self.model_dir):
+                        adapter_path = get_lora_adapter_path(self.model_dir)
+                        logger.info(f"Loading contrastive LoRA adapter from {adapter_path}")
+                        try:
+                            from peft import PeftModel
+
+                            self.model = PeftModel.from_pretrained(self.model, adapter_path)
+                            self.model = self.model.merge_and_unload()
+                            logger.info("LoRA adapter merged (zero runtime overhead)")
+                        except ImportError:
+                            logger.warning(
+                                "peft not installed, skipping LoRA adapter. "
+                                "Install with: pip install 'vhold[contrastive]'"
+                            )
+                        except Exception as e:
+                            logger.warning(f"Failed to load LoRA adapter: {e}")
+                except Exception:
+                    pass  # lora module import failed, skip silently
+
             self.model = self.model.to(self.device)
             self.model = self.model.float()
             self.model.eval()
@@ -365,6 +393,7 @@ def triage_proteins(
     tokenizer: object | None = None,
     encoder_only: bool = False,
     extractor: object | None = None,
+    use_lora: bool = True,
 ) -> tuple[TriageResult, "EmbeddingExtractor"]:
     """Run embedding-based triage on input sequences.
 
@@ -386,6 +415,7 @@ def triage_proteins(
         extractor: Pre-built extractor (e.g., OnnxEmbeddingExtractor).
             If provided, device/model_dir/model/tokenizer/encoder_only
             are ignored.
+        use_lora: If True, auto-load contrastive LoRA adapter if installed.
 
     Returns:
         Tuple of (TriageResult, extractor) -- the extractor is
@@ -398,6 +428,7 @@ def triage_proteins(
             model=model,
             tokenizer=tokenizer,
             encoder_only=encoder_only,
+            use_lora=use_lora,
         )
 
     # Extract embeddings (encoder only, fast)

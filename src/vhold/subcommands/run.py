@@ -35,6 +35,7 @@ def run_pipeline(
     classify: bool = True,
     classifier_confidence: float = 0.5,
     backend: str = "torch",
+    use_lora: bool = True,
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -143,6 +144,7 @@ def run_pipeline(
                     device=device,
                     model_dir=Path(model_dir) if model_dir else None,
                     threshold=triage_threshold,
+                    use_lora=use_lora,
                 )
 
                 # Save model/tokenizer for reuse by ProstT5Predictor
@@ -360,6 +362,7 @@ def run_pipeline(
                             model=shared_model,
                             tokenizer=shared_tokenizer,
                             encoder_only=shared_model is None,
+                            use_lora=use_lora,
                         )
                     ids, embeddings = extractor.extract_batch(
                         unknown_seqs, show_progress=False,

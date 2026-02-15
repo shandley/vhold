@@ -51,6 +51,7 @@ dev = [
 embeddings = ["h5py>=3.0"]
 llm = ["anthropic>=0.39.0"]
 onnx = ["optimum[onnxruntime]>=1.17.0", "onnxruntime>=1.17.0"]
+contrastive = ["peft>=0.14.0"]
 
 [project.scripts]
 vhold = "vhold.cli:main"
