@@ -428,9 +428,9 @@ def main():
     print("Extracting baseline embeddings")
     print("=" * 60)
 
-    from transformers import AutoTokenizer, T5ForConditionalGeneration
+    from transformers import T5Tokenizer, T5ForConditionalGeneration
 
-    tokenizer = AutoTokenizer.from_pretrained(PROSTT5_MODEL_NAME)
+    tokenizer = T5Tokenizer.from_pretrained(PROSTT5_MODEL_NAME, do_lower_case=False)
     base_model = T5ForConditionalGeneration.from_pretrained(PROSTT5_MODEL_NAME)
     base_model = base_model.to(device)
     base_model.eval()

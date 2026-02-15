@@ -753,7 +753,7 @@ def main():
     print("Loading ProstT5 and applying LoRA")
     print("=" * 60)
 
-    from transformers import AutoTokenizer, T5ForConditionalGeneration
+    from transformers import T5Tokenizer, T5ForConditionalGeneration
 
     from vhold.utils.constants import PROSTT5_MODEL_NAME
 
@@ -764,7 +764,7 @@ def main():
             model_name = str(model_path)
 
     print(f"Loading model: {model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False)
     model = T5ForConditionalGeneration.from_pretrained(model_name)
 
     # Freeze everything first

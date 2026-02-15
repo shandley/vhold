@@ -47,14 +47,14 @@ def load_model_with_lora(
     Returns:
         (model, tokenizer) where model has LoRA permanently fused
     """
-    from transformers import AutoTokenizer, T5ForConditionalGeneration
+    from transformers import T5Tokenizer, T5ForConditionalGeneration
 
     model_name = PROSTT5_MODEL_NAME
     if model_dir and (model_dir / "config.json").exists():
         model_name = str(model_dir)
 
     print(f"Loading base model: {model_name}")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = T5Tokenizer.from_pretrained(model_name, do_lower_case=False)
     model = T5ForConditionalGeneration.from_pretrained(model_name)
 
     # Find adapter
