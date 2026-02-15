@@ -298,10 +298,22 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     type=float,
     help="Cosine similarity threshold for embedding triage (default: 0.90)",
 )
+@click.option(
+    "--classify/--no-classify",
+    default=True,
+    help="Use MLP classifier for unknown proteins (requires trained model)",
+)
+@click.option(
+    "--classifier-confidence",
+    default=0.5,
+    type=float,
+    help="Minimum confidence for MLP classifier predictions (default: 0.5)",
+)
 def run(
     input_file, output, database, databases, threads, batch_size, device,
     evalue, sensitivity, confidence_threshold, model_dir, prefix,
     fast, llm_classify, llm_model, triage, triage_threshold,
+    classify, classifier_confidence,
 ):
     """Run the full vhold annotation pipeline.
 
@@ -332,6 +344,8 @@ def run(
         llm_model=llm_model,
         triage=triage,
         triage_threshold=triage_threshold,
+        classify=classify,
+        classifier_confidence=classifier_confidence,
     )
 
 

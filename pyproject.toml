@@ -46,6 +46,7 @@ dev = [
     "pytest>=7.0",
     "pytest-cov",
     "ruff",
+    "scikit-learn>=1.0",
 ]
 embeddings = ["h5py>=3.0"]
 llm = ["anthropic>=0.39.0"]

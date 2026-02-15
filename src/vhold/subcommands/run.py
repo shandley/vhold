@@ -32,6 +32,8 @@ def run_pipeline(
     llm_model: str = "claude-haiku-4-5-20251001",
     triage: bool = False,
     triage_threshold: float = 0.90,
+    classify: bool = True,
+    classifier_confidence: float = 0.5,
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -298,6 +300,74 @@ def run_pipeline(
     annotated = sum(1 for a in annotations.values() if a.is_annotated)
     logger.info(f"Total annotated: {annotated}/{len(annotations)} proteins")
     logger.info("")
+
+    # ========================================
+    # Step 4a.5: MLP classification (when model installed)
+    # ========================================
+    if classify:
+        from vhold.databases.classifier import check_classifier_model
+
+        if check_classifier_model(Path(model_dir) if model_dir else None):
+            # Find unknown proteins that could benefit from MLP classification
+            unknown_ids = [
+                qid for qid, result in annotations.items()
+                if result.is_annotated
+                and result.classification_source in ("keywords", "embedding")
+                and result.functional_category == "unknown"
+            ]
+
+            if unknown_ids:
+                logger.info(
+                    f"Step 4a.5: MLP classification of {len(unknown_ids)} unknown proteins..."
+                )
+
+                from vhold.features.classifier import load_classifier, classify_with_model
+                from vhold.features.embeddings import EmbeddingExtractor
+
+                classifier = load_classifier(
+                    model_dir=Path(model_dir) if model_dir else None
+                )
+
+                if classifier is not None:
+                    # Extract embeddings for unknown proteins
+                    unknown_seqs = {
+                        sid: seq_dict[sid] for sid in unknown_ids if sid in seq_dict
+                    }
+
+                    extractor = EmbeddingExtractor(
+                        device=device,
+                        model_dir=Path(model_dir) if model_dir else None,
+                        model=shared_model,
+                        tokenizer=shared_tokenizer,
+                        encoder_only=shared_model is None,
+                    )
+                    ids, embeddings = extractor.extract_batch(
+                        unknown_seqs, show_progress=False,
+                    )
+
+                    predictions = classify_with_model(
+                        embeddings, ids, classifier,
+                        confidence_threshold=classifier_confidence,
+                    )
+
+                    reclassified = 0
+                    for pid, (category, confidence) in predictions.items():
+                        if pid in annotations:
+                            annotations[pid].functional_category = category
+                            annotations[pid].classification_source = "mlp_classifier"
+                            reclassified += 1
+                            logger.info(
+                                f"  {pid}: unknown -> {category} "
+                                f"(confidence: {confidence:.3f})"
+                            )
+
+                    logger.info(
+                        f"MLP classifier: {reclassified}/{len(unknown_ids)} "
+                        f"proteins reclassified"
+                    )
+                logger.info("")
+        else:
+            logger.debug("MLP classifier not installed, skipping Step 4a.5")
 
     # ========================================
     # Step 4b: LLM reclassification (optional)
