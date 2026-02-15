@@ -21,7 +21,7 @@ Foldseek (structural search against BFVD + Viro3D)
 Multi-database consensus scoring
     |
     v
-Functional classification (keywords + optional LLM)
+Functional classification (keywords + MLP classifier + optional LLM)
     |
     v
 Output: annotations, confidence scores, dark matter report
@@ -30,7 +30,7 @@ Output: annotations, confidence scores, dark matter report
 1. **Structure prediction**: ProstT5 translates amino acid sequences into 3Di structural alphabet representations
 2. **Structural search**: Foldseek searches predicted structures against two viral databases (BFVD and Viro3D)
 3. **Consensus scoring**: Hits from both databases are weighted, scored, and compared for agreement
-4. **Classification**: Proteins are assigned functional categories based on transferred annotations
+4. **Classification**: Proteins are assigned functional categories via Pfam/GO/keyword matching, an MLP classifier trained on structural embeddings, and optional LLM reclassification
 5. **Dark matter analysis**: Proteins without confident annotations are flagged for follow-up
 
 ## Installation
@@ -144,6 +144,23 @@ vhold predict -i proteins.fasta -o predictions/ --device cuda
 vhold compare -p predictions/ -o results/ -t 32
 ```
 
+### MLP Classifier
+
+An MLP classifier trained on ProstT5 structural embeddings automatically reclassifies "unknown" proteins when a trained model is installed. This runs between keyword matching and LLM reclassification, providing a fast, offline alternative.
+
+```bash
+# Runs automatically when model is installed (default: --classify)
+vhold run -i proteins.fasta -o results/
+
+# Disable classifier
+vhold run -i proteins.fasta -o results/ --no-classify
+
+# Adjust confidence threshold (default: 0.5)
+vhold run -i proteins.fasta -o results/ --classifier-confidence 0.8
+```
+
+The classifier model is trained via `scripts/train_classifier.py` and installed at `~/.vhold/models/classifier/vhold_classifier.pt`.
+
 ### All Options
 
 ```bash
@@ -153,6 +170,8 @@ vhold run -i proteins.fasta -o results/ \
     --evalue 1e-5 \               # Stricter E-value threshold
     --sensitivity 9.5 \           # Foldseek sensitivity (1-9.5)
     --fast \                      # Greedy decoding (~2-3x faster)
+    --no-classify \               # Disable MLP classifier
+    --classifier-confidence 0.5 \ # MLP confidence threshold
     --llm-classify \              # LLM functional classification
     --llm-model claude-haiku-4-5-20251001  # LLM model choice
 ```
@@ -235,7 +254,7 @@ Proteins are classified into functional categories based on transferred annotati
 | movement | Cell-to-cell movement (plant viruses) |
 | unknown | No functional annotation determined |
 
-With `--llm-classify`, proteins that fall through keyword matching are reclassified using an LLM with virology domain knowledge, significantly improving accuracy for eukaryotic virus proteins with generic descriptions.
+When a trained MLP classifier model is installed, proteins that fall through keyword matching are automatically reclassified using structural embeddings (macro F1: 0.692). With `--llm-classify`, remaining unknowns are further reclassified using an LLM with virology domain knowledge. The combination of MLP classifier + LLM provides the best accuracy for eukaryotic virus proteins with generic descriptions.
 
 ## Novelty Classification
 

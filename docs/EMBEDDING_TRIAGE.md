@@ -123,6 +123,7 @@ This approach subsumes two previously separate roadmap items:
 It also complements:
 
 - **Fast mode (--fast)**: For proteins that DO need structural search, --fast reduces decoder time. Triage reduces the NUMBER of proteins going through the decoder.
+- **MLP classifier (--classify)**: Uses the same ProstT5 encoder embeddings to classify "unknown" proteins into functional categories. The embedding DB served as the training dataset (84K labeled proteins). Macro F1: 0.692.
 - **LLM classification (--llm-classify)**: Still applies as a post-processing step for functional category assignment on all annotated proteins regardless of method.
 
 ## Measured Impact
@@ -231,7 +232,13 @@ Cosine similarity vs reference embeddings (milliseconds)
 Merge all annotations
     |
     v
-Functional classification (keywords + LLM)
+Functional classification (keywords + Pfam/GO)
+    |
+    v
+MLP classifier (reclassify "unknowns" using embeddings, F1=0.692)
+    |
+    v
+LLM reclassification (optional, for remaining unknowns)
     |
     v
 Output: unified results with provenance
@@ -240,8 +247,9 @@ Output: unified results with provenance
 This architecture means:
 - Every protein gets an encoder pass (fast, seconds)
 - Only grey/dark matter proteins get a decoder pass (slow, but quantized)
+- The same encoder embeddings serve triage, classification, and structural prediction
+- Three layers of functional classification: keywords/Pfam/GO → MLP classifier → LLM
 - No new binary dependencies beyond what exists
-- The same model serves both triage and structural prediction
 - Provenance tracking distinguishes annotation methods
 
 ## References

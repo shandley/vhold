@@ -260,6 +260,43 @@ Each classification includes a `classification_source` field indicating what evi
 - `go_bp:<term>` - GO Biological Process match
 - `go_mf:<term>` - GO Molecular Function match
 - `keywords` - Text-based keyword matching (fallback)
+- `mlp_classifier` - MLP embedding classifier prediction
+- `llm:<model>` - LLM-based reclassification
+
+### Step 6b: MLP Embedding Classifier (Automatic)
+
+When a trained classifier model is installed, proteins classified as "unknown" by the keyword/Pfam/GO system are automatically re-evaluated using a lightweight MLP trained on ProstT5 encoder embeddings.
+
+**Architecture**: MLP with input dimension 1024, hidden layers [512, 256], LayerNorm + ReLU + Dropout(0.3) at each layer, and 11 output classes (10 functional categories + unknown).
+
+**Training Data**: 84,250 proteins with labels from three sources:
+1. **Keyword/Pfam/GO annotations** (69K proteins): High-confidence labels from the evidence hierarchy
+2. **Agreement-filtered LLM labels** (15K proteins): Protein descriptions batch-classified by Claude Haiku, filtered to retain only labels where the structural model independently agreed
+
+**Training Details**:
+- 85/15 stratified train/val split
+- Inverse-frequency class weights in CrossEntropyLoss
+- AdamW optimizer, lr=1e-3, weight_decay=1e-4, cosine annealing
+- Batch size 2048, early stopping on val macro F1 (patience=5)
+
+**Performance** (validation set, macro F1 = 0.692):
+
+| Category | Precision | Recall | F1 |
+|----------|-----------|--------|-----|
+| structural | 0.931 | 0.737 | 0.823 |
+| replication | 0.937 | 0.801 | 0.863 |
+| protease | 0.717 | 0.862 | 0.783 |
+| nuclease | 0.761 | 0.863 | 0.809 |
+| packaging | 0.428 | 0.845 | 0.568 |
+| regulatory | 0.613 | 0.819 | 0.701 |
+| movement | 0.342 | 0.785 | 0.477 |
+| lysis | 0.607 | 0.892 | 0.722 |
+| host_interaction | 0.540 | 0.879 | 0.669 |
+| entry | 0.368 | 0.835 | 0.511 |
+
+**Integration**: The classifier only overrides "unknown" proteins -- it never overrides Pfam, SUPERFAMILY, or GO evidence. Predictions below the confidence threshold (default 0.5) are not applied. Reclassified proteins receive `classification_source: "mlp_classifier"`.
+
+**CLI**: Enabled by default (`--classify`), disable with `--no-classify`. Confidence threshold adjustable via `--classifier-confidence`.
 
 ### Step 7: Dark Matter Analysis
 

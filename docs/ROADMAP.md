@@ -167,6 +167,8 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 
 ## Completed Since Last Update
 
+- **MLP functional classifier** (`--classify`): Lightweight MLP (1024→512→256→11, 660K params) trained on frozen ProstT5 encoder embeddings. Macro F1 0.692 on validation set. Auto-runs in pipeline Step 4a.5 to reclassify "unknown" proteins. Three training iterations: v1 (keyword labels, F1=0.635), v2 (raw LLM labels, F1=0.531 — worse due to text/structure mismatch), v3 (agreement-filtered LLM labels, F1=0.692 — best). Key finding: filtering LLM labels through structural model agreement removes noise from text-based annotations.
+- **LLM training label generation**: Batch LLM classification of 32,312 unique protein descriptions via Claude Haiku (808 API calls, $2.52, 38 min). 55,941 proteins labeled across 10 categories. Agreement filtering with structural model retained 18,746 high-quality labels (33.5% agreement rate).
 - **Embedding triage infrastructure**: ProstT5 encoder embedding DB complete (436K proteins, 822 MB, 59ms search). Subsumes BLAST pre-filtering (Direction 1) and pre-computed 3Di references (Direction 3) — see `docs/EMBEDDING_TRIAGE.md`.
 - **FoldMason integration (`vhold align`)**: Multiple structural alignment via ProstT5 → FoldMason fastMode bridge. Enables structural phylogenetics (Direction 6) as a practical tool. Note: refinement incompatible with coordinate-free mode (segfaults).
 - **Triage threshold calibration**: Empirical calibration across 85 proteins from 4 case studies. Optimal threshold: 0.90 (100% recall, 83.5% precision, F1=0.910). Enriched BFVD metadata (345K UniProt annotations) dramatically improved annotation transfer quality.
@@ -181,7 +183,10 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 | 3 | ~~Pre-computed 3Di~~ | ~~High~~ | ~~Moderate~~ | **Superseded** by embedding triage |
 | -- | ~~Triage threshold calibration~~ | ~~High~~ | ~~Low~~ | **COMPLETE** — threshold 0.90, F1=0.910 |
 | -- | ~~Wire `--triage` end-to-end~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — `--triage` and `--llm-classify` working |
+| -- | ~~MLP functional classifier~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — macro F1 0.692, `--classify` in pipeline |
 | 2 | Metagenomic integration | High | High | **Next priority** |
+| -- | Iterative label refinement | Medium | Low | Use v3 as filter for another agreement round |
+| -- | Contrastive encoder fine-tuning | High | High | Would improve both triage and classifier |
 | 4 | Emerging pathogen workflow | High (niche) | Low | Do when packaging for release |
 | 5 | Structural novelty discovery | Medium-high | Moderate | Research feature, iterate |
 | 6 | Structural taxonomy | Medium | Moderate | **Partially enabled** by `vhold align` |
