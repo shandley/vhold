@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from vhold.features.prostt5 import ProstT5Predictor
+from vhold.features.prostt5 import get_predictor
 from vhold.features.confidence import apply_confidence_mask
 from vhold.features.foldseek import search_databases, merge_results
 from vhold.io.fasta import read_fasta, write_fasta, write_3di_fasta
@@ -34,6 +34,7 @@ def run_pipeline(
     triage_threshold: float = 0.90,
     classify: bool = True,
     classifier_confidence: float = 0.5,
+    backend: str = "torch",
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -124,13 +125,29 @@ def run_pipeline(
             emb_db = EmbeddingDatabase(emb_db_path)
             emb_db.load()
 
-            triage_result, extractor = triage_proteins(
-                sequences=seq_dict,
-                embedding_db=emb_db,
-                device=device,
-                model_dir=Path(model_dir) if model_dir else None,
-                threshold=triage_threshold,
-            )
+            if backend == "onnx":
+                from vhold.features.onnx_embeddings import OnnxEmbeddingExtractor
+                onnx_extractor = OnnxEmbeddingExtractor(
+                    model_dir=Path(model_dir) if model_dir else None,
+                )
+                triage_result, extractor = triage_proteins(
+                    sequences=seq_dict,
+                    embedding_db=emb_db,
+                    threshold=triage_threshold,
+                    extractor=onnx_extractor,
+                )
+            else:
+                triage_result, extractor = triage_proteins(
+                    sequences=seq_dict,
+                    embedding_db=emb_db,
+                    device=device,
+                    model_dir=Path(model_dir) if model_dir else None,
+                    threshold=triage_threshold,
+                )
+
+                # Save model/tokenizer for reuse by ProstT5Predictor
+                shared_model = extractor.model
+                shared_tokenizer = extractor.tokenizer
 
             logger.info(
                 f"Triage: {triage_result.stats['matched']} matched, "
@@ -144,10 +161,6 @@ def run_pipeline(
                     query_lengths=seq_lengths,
                     db_dir=db_dir,
                 )
-
-            # Save model/tokenizer for reuse by ProstT5Predictor
-            shared_model = extractor.model
-            shared_tokenizer = extractor.tokenizer
 
             # Only run decoder on unmatched proteins
             sequences_for_decoder = {
@@ -178,14 +191,15 @@ def run_pipeline(
             f"{len(sequences_for_decoder)} proteins with ProstT5..."
         )
 
-        predictor = ProstT5Predictor(
+        predictor = get_predictor(
             device=device,
+            backend=backend,
             model_dir=Path(model_dir) if model_dir else None,
             fast=fast,
         )
 
-        # Reuse model from triage if available
-        if shared_model is not None:
+        # Reuse model from triage if available (PyTorch only)
+        if shared_model is not None and backend == "torch":
             predictor.model = shared_model
             predictor.tokenizer = shared_tokenizer
             predictor._loaded = True
@@ -322,7 +336,6 @@ def run_pipeline(
                 )
 
                 from vhold.features.classifier import load_classifier, classify_with_model
-                from vhold.features.embeddings import EmbeddingExtractor
 
                 classifier = load_classifier(
                     model_dir=Path(model_dir) if model_dir else None
@@ -334,13 +347,20 @@ def run_pipeline(
                         sid: seq_dict[sid] for sid in unknown_ids if sid in seq_dict
                     }
 
-                    extractor = EmbeddingExtractor(
-                        device=device,
-                        model_dir=Path(model_dir) if model_dir else None,
-                        model=shared_model,
-                        tokenizer=shared_tokenizer,
-                        encoder_only=shared_model is None,
-                    )
+                    if backend == "onnx":
+                        from vhold.features.onnx_embeddings import OnnxEmbeddingExtractor
+                        extractor = OnnxEmbeddingExtractor(
+                            model_dir=Path(model_dir) if model_dir else None,
+                        )
+                    else:
+                        from vhold.features.embeddings import EmbeddingExtractor
+                        extractor = EmbeddingExtractor(
+                            device=device,
+                            model_dir=Path(model_dir) if model_dir else None,
+                            model=shared_model,
+                            tokenizer=shared_tokenizer,
+                            encoder_only=shared_model is None,
+                        )
                     ids, embeddings = extractor.extract_batch(
                         unknown_seqs, show_progress=False,
                     )

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from vhold.features.prostt5 import ProstT5Predictor
+from vhold.features.prostt5 import get_predictor
 from vhold.features.confidence import apply_confidence_mask
 from vhold.io.fasta import read_fasta, write_3di_fasta
 from vhold.utils.logging import setup_logging, get_logger
@@ -19,6 +19,7 @@ def run_predict(
     confidence_threshold: float = 0.7,
     model_dir: str | Path | None = None,
     fast: bool = False,
+    backend: str = "torch",
 ) -> None:
     """Run ProstT5 3Di prediction on input sequences.
 
@@ -54,8 +55,9 @@ def run_predict(
     seq_dict = {rec.id: rec.sequence for rec in sequences.values()}
 
     # Initialize predictor
-    predictor = ProstT5Predictor(
+    predictor = get_predictor(
         device=device,
+        backend=backend,
         model_dir=Path(model_dir) if model_dir else None,
         fast=fast,
     )

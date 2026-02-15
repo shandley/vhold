@@ -10,7 +10,7 @@ from vhold.features.foldmason import (
     run_foldmason_msa,
     write_alignment_summary,
 )
-from vhold.features.prostt5 import ProstT5Predictor
+from vhold.features.prostt5 import get_predictor
 from vhold.io.fasta import read_fasta, write_fasta, write_3di_fasta
 from vhold.utils.logging import setup_logging, get_logger
 
@@ -27,6 +27,7 @@ def run_align(
     model_dir: str | Path | None = None,
     refine_iters: int = 0,
     predictions_dir: str | Path | None = None,
+    backend: str = "torch",
 ) -> None:
     """Run multiple structural alignment on input protein sequences.
 
@@ -115,8 +116,9 @@ def run_align(
         pred_output = output_path / "predictions"
         pred_output.mkdir(parents=True, exist_ok=True)
 
-        predictor = ProstT5Predictor(
+        predictor = get_predictor(
             device=device,
+            backend=backend,
             model_dir=Path(model_dir) if model_dir else None,
             fast=fast,
         )

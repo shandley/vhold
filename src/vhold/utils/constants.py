@@ -111,3 +111,11 @@ EMBEDDING_DB_FILE = "vhold_embeddings.npz"
 # MLP functional classifier
 CLASSIFIER_MODEL_FILE = "vhold_classifier.pt"
 DEFAULT_CLASSIFIER_CONFIDENCE = 0.5
+
+# ONNX INT8 quantization
+ONNX_MODEL_DIR_NAME = "onnx_int8"
+
+
+def get_onnx_model_dir() -> Path:
+    """Get the directory for ONNX INT8 quantized models."""
+    return get_model_dir() / ONNX_MODEL_DIR_NAME

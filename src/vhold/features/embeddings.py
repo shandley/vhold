@@ -364,7 +364,8 @@ def triage_proteins(
     model: object | None = None,
     tokenizer: object | None = None,
     encoder_only: bool = False,
-) -> tuple[TriageResult, EmbeddingExtractor]:
+    extractor: object | None = None,
+) -> tuple[TriageResult, "EmbeddingExtractor"]:
     """Run embedding-based triage on input sequences.
 
     Extracts embeddings for all query proteins using the ProstT5 encoder,
@@ -382,18 +383,22 @@ def triage_proteins(
         tokenizer: Pre-loaded tokenizer
         encoder_only: If True, load only encoder (saves memory but model
             can't be reused for decoding). Default False for pipeline use.
+        extractor: Pre-built extractor (e.g., OnnxEmbeddingExtractor).
+            If provided, device/model_dir/model/tokenizer/encoder_only
+            are ignored.
 
     Returns:
-        Tuple of (TriageResult, EmbeddingExtractor) -- the extractor is
+        Tuple of (TriageResult, extractor) -- the extractor is
         returned so its loaded model can be reused by ProstT5Predictor
     """
-    extractor = EmbeddingExtractor(
-        device=device,
-        model_dir=model_dir,
-        model=model,
-        tokenizer=tokenizer,
-        encoder_only=encoder_only,
-    )
+    if extractor is None:
+        extractor = EmbeddingExtractor(
+            device=device,
+            model_dir=model_dir,
+            model=model,
+            tokenizer=tokenizer,
+            encoder_only=encoder_only,
+        )
 
     # Extract embeddings (encoder only, fast)
     ids, embeddings = extractor.extract_batch(

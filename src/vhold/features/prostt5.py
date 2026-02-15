@@ -91,6 +91,110 @@ def prepare_prostt5_sequence(sequence: str) -> str:
     return f"<AA2fold> {spaced}"
 
 
+# Generation parameters for AA to 3Di translation
+# These are tuned for structure prediction as per ProstT5 documentation
+GEN_KWARGS = {
+    "do_sample": True,
+    "num_beams": 3,
+    "top_p": 0.95,
+    "temperature": 1.2,
+    "top_k": 6,
+    "repetition_penalty": 1.2,
+    "early_stopping": True,
+    "num_return_sequences": 1,
+}
+
+# Fast generation: greedy decoding (1 beam, no sampling)
+# ~3x faster than beam search, suitable for well-characterized proteins
+# where high-identity hits are expected. Not recommended for remote
+# homology / twilight zone searches where 3Di quality matters more.
+FAST_GEN_KWARGS = {
+    "do_sample": False,
+    "num_beams": 1,
+    "num_return_sequences": 1,
+}
+
+
+def calculate_confidence_scores(
+    scores: tuple,
+    expected_len: int,
+) -> list[float]:
+    """Calculate per-residue confidence scores from generation logits.
+
+    The confidence is calculated as the softmax probability of the
+    selected token at each position. Higher probability means the
+    model is more confident in that prediction.
+
+    Args:
+        scores: Tuple of score tensors from model.generate(), one per position
+        expected_len: Expected sequence length
+
+    Returns:
+        List of confidence scores (0-1) for each residue
+    """
+    if not scores:
+        return [1.0] * expected_len
+
+    confidence_scores = []
+
+    for score_tensor in scores:
+        # score_tensor shape: (batch_size, vocab_size)
+        # Apply softmax to get probabilities
+        probs = F.softmax(score_tensor[0], dim=-1)
+        # Get the maximum probability (confidence in the chosen token)
+        max_prob = probs.max().item()
+        confidence_scores.append(max_prob)
+
+    # Adjust length if needed
+    if len(confidence_scores) > expected_len:
+        confidence_scores = confidence_scores[:expected_len]
+    elif len(confidence_scores) < expected_len:
+        mean_conf = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 1.0
+        confidence_scores.extend([mean_conf] * (expected_len - len(confidence_scores)))
+
+    return confidence_scores
+
+
+def calculate_batch_confidence_scores(
+    scores: tuple,
+    batch_size: int,
+    seq_lens: list[int],
+) -> list[list[float]]:
+    """Calculate per-residue confidence for a batch of sequences.
+
+    Args:
+        scores: Tuple of score tensors, one per generated position
+        batch_size: Number of sequences in the batch
+        seq_lens: List of expected sequence lengths
+
+    Returns:
+        List of confidence score lists, one per sequence in batch
+    """
+    if not scores:
+        return [[1.0] * length for length in seq_lens]
+
+    batch_confidences: list[list[float]] = [[] for _ in range(batch_size)]
+
+    for score_tensor in scores:
+        probs = F.softmax(score_tensor, dim=-1)
+        max_probs = probs.max(dim=-1).values
+
+        for batch_idx in range(batch_size):
+            batch_confidences[batch_idx].append(max_probs[batch_idx].item())
+
+    for idx, expected_len in enumerate(seq_lens):
+        conf = batch_confidences[idx]
+        if len(conf) > expected_len:
+            batch_confidences[idx] = conf[:expected_len]
+        elif len(conf) < expected_len:
+            mean_conf = sum(conf) / len(conf) if conf else 1.0
+            batch_confidences[idx].extend(
+                [mean_conf] * (expected_len - len(conf))
+            )
+
+    return batch_confidences
+
+
 class ProstT5Predictor:
     """ProstT5 model for predicting 3Di structural sequences.
 
@@ -98,28 +202,8 @@ class ProstT5Predictor:
     to convert amino acid sequences to 3Di structural alphabet.
     """
 
-    # Generation parameters for AA to 3Di translation
-    # These are tuned for structure prediction as per ProstT5 documentation
-    GEN_KWARGS = {
-        "do_sample": True,
-        "num_beams": 3,
-        "top_p": 0.95,
-        "temperature": 1.2,
-        "top_k": 6,
-        "repetition_penalty": 1.2,
-        "early_stopping": True,
-        "num_return_sequences": 1,
-    }
-
-    # Fast generation: greedy decoding (1 beam, no sampling)
-    # ~3x faster than beam search, suitable for well-characterized proteins
-    # where high-identity hits are expected. Not recommended for remote
-    # homology / twilight zone searches where 3Di quality matters more.
-    FAST_GEN_KWARGS = {
-        "do_sample": False,
-        "num_beams": 1,
-        "num_return_sequences": 1,
-    }
+    GEN_KWARGS = GEN_KWARGS
+    FAST_GEN_KWARGS = FAST_GEN_KWARGS
 
     def __init__(
         self,
@@ -207,42 +291,8 @@ class ProstT5Predictor:
         scores: tuple[torch.Tensor, ...],
         expected_len: int,
     ) -> list[float]:
-        """Calculate per-residue confidence scores from generation logits.
-
-        The confidence is calculated as the softmax probability of the
-        selected token at each position. Higher probability means the
-        model is more confident in that prediction.
-
-        Args:
-            scores: Tuple of score tensors from model.generate(), one per position
-            expected_len: Expected sequence length
-
-        Returns:
-            List of confidence scores (0-1) for each residue
-        """
-        if not scores:
-            return [1.0] * expected_len
-
-        confidence_scores = []
-
-        for score_tensor in scores:
-            # score_tensor shape: (batch_size, vocab_size)
-            # Apply softmax to get probabilities
-            probs = F.softmax(score_tensor[0], dim=-1)
-            # Get the maximum probability (confidence in the chosen token)
-            max_prob = probs.max().item()
-            confidence_scores.append(max_prob)
-
-        # Adjust length if needed (3Di tokens may differ from AA count due to spaces)
-        # The model generates one score per output token
-        if len(confidence_scores) > expected_len:
-            confidence_scores = confidence_scores[:expected_len]
-        elif len(confidence_scores) < expected_len:
-            # Pad with mean confidence if too short
-            mean_conf = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 1.0
-            confidence_scores.extend([mean_conf] * (expected_len - len(confidence_scores)))
-
-        return confidence_scores
+        """Calculate per-residue confidence scores from generation logits."""
+        return calculate_confidence_scores(scores, expected_len)
 
     def predict_single(self, sequence_id: str, aa_sequence: str) -> PredictionResult:
         """Predict 3Di sequence for a single protein.
@@ -459,43 +509,8 @@ class ProstT5Predictor:
         batch_size: int,
         seq_lens: list[int],
     ) -> list[list[float]]:
-        """Calculate per-residue confidence for a batch of sequences.
-
-        Args:
-            scores: Tuple of score tensors, one per generated position
-            batch_size: Number of sequences in the batch
-            seq_lens: List of expected sequence lengths
-
-        Returns:
-            List of confidence score lists, one per sequence in batch
-        """
-        if not scores:
-            return [[1.0] * length for length in seq_lens]
-
-        # Initialize confidence lists for each sequence
-        batch_confidences: list[list[float]] = [[] for _ in range(batch_size)]
-
-        for score_tensor in scores:
-            # score_tensor shape: (batch_size, vocab_size)
-            probs = F.softmax(score_tensor, dim=-1)
-            # Get max probability for each item in batch
-            max_probs = probs.max(dim=-1).values
-
-            for batch_idx in range(batch_size):
-                batch_confidences[batch_idx].append(max_probs[batch_idx].item())
-
-        # Adjust lengths for each sequence
-        for idx, expected_len in enumerate(seq_lens):
-            conf = batch_confidences[idx]
-            if len(conf) > expected_len:
-                batch_confidences[idx] = conf[:expected_len]
-            elif len(conf) < expected_len:
-                mean_conf = sum(conf) / len(conf) if conf else 1.0
-                batch_confidences[idx].extend(
-                    [mean_conf] * (expected_len - len(conf))
-                )
-
-        return batch_confidences
+        """Calculate per-residue confidence for a batch of sequences."""
+        return calculate_batch_confidence_scores(scores, batch_size, seq_lens)
 
 
 def predict_3di(
@@ -530,3 +545,48 @@ def predict_3di(
         batch_size=batch_size,
         show_progress=show_progress,
     )
+
+
+def get_predictor(
+    device: str = "auto",
+    backend: str = "torch",
+    model_dir: Path | None = None,
+    fast: bool = False,
+):
+    """Factory to get the appropriate predictor backend.
+
+    Args:
+        device: Device for PyTorch backend ('auto', 'cuda', 'mps', 'cpu')
+        backend: 'torch' or 'onnx'
+        model_dir: Model cache directory
+        fast: Use greedy decoding
+
+    Returns:
+        ProstT5Predictor or OnnxProstT5Predictor
+    """
+    if backend == "onnx":
+        from vhold.features.onnx_export import check_onnx_available, check_onnx_exported
+        from vhold.utils.constants import ONNX_MODEL_DIR_NAME
+
+        if not check_onnx_available():
+            raise ImportError(
+                "ONNX backend requires optimum and onnxruntime. "
+                "Install with: pip install vhold[onnx]"
+            )
+
+        if model_dir:
+            onnx_dir = Path(model_dir) / ONNX_MODEL_DIR_NAME
+        else:
+            from vhold.utils.constants import get_onnx_model_dir
+            onnx_dir = get_onnx_model_dir()
+
+        if not check_onnx_exported(onnx_dir):
+            raise FileNotFoundError(
+                f"ONNX models not found at {onnx_dir}. "
+                "Export first with: vhold export-onnx"
+            )
+
+        from vhold.features.onnx_predictor import OnnxProstT5Predictor
+        return OnnxProstT5Predictor(model_dir=onnx_dir, fast=fast)
+
+    return ProstT5Predictor(device=device, model_dir=model_dir, fast=fast)

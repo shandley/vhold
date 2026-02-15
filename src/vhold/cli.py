@@ -110,7 +110,14 @@ def install(database, bfvd, viro3d, force, embeddings):
     default=False,
     help="Use greedy decoding (~3x faster, may reduce sensitivity for remote homologs)",
 )
-def predict(input_file, output, threads, batch_size, device, confidence_threshold, model_dir, fast):
+@click.option(
+    "--backend",
+    type=click.Choice(["torch", "onnx"]),
+    default="torch",
+    help="Inference backend (default: torch). ONNX requires: pip install vhold[onnx] && vhold export-onnx",
+)
+def predict(input_file, output, threads, batch_size, device, confidence_threshold, model_dir, fast,
+            backend):
     """Predict 3Di structural sequences using ProstT5.
 
     Takes protein sequences and predicts 3Di structural alphabet
@@ -126,6 +133,7 @@ def predict(input_file, output, threads, batch_size, device, confidence_threshol
         confidence_threshold=confidence_threshold,
         model_dir=model_dir,
         fast=fast,
+        backend=backend,
     )
 
 
@@ -309,11 +317,17 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     type=float,
     help="Minimum confidence for MLP classifier predictions (default: 0.5)",
 )
+@click.option(
+    "--backend",
+    type=click.Choice(["torch", "onnx"]),
+    default="torch",
+    help="Inference backend (default: torch). ONNX requires: pip install vhold[onnx] && vhold export-onnx",
+)
 def run(
     input_file, output, database, databases, threads, batch_size, device,
     evalue, sensitivity, confidence_threshold, model_dir, prefix,
     fast, llm_classify, llm_model, triage, triage_threshold,
-    classify, classifier_confidence,
+    classify, classifier_confidence, backend,
 ):
     """Run the full vhold annotation pipeline.
 
@@ -346,6 +360,7 @@ def run(
         triage_threshold=triage_threshold,
         classify=classify,
         classifier_confidence=classifier_confidence,
+        backend=backend,
     )
 
 
@@ -405,8 +420,14 @@ def run(
     default=None,
     help="Pre-computed 3Di predictions directory (skip ProstT5 step)",
 )
+@click.option(
+    "--backend",
+    type=click.Choice(["torch", "onnx"]),
+    default="torch",
+    help="Inference backend (default: torch). ONNX requires: pip install vhold[onnx] && vhold export-onnx",
+)
 def align(input_file, output, threads, device, fast, confidence_threshold,
-          model_dir, refine_iters, predictions_dir):
+          model_dir, refine_iters, predictions_dir, backend):
     """Multiple structural alignment of viral protein families.
 
     Predicts 3Di structural sequences using ProstT5, then runs FoldMason
@@ -432,6 +453,48 @@ def align(input_file, output, threads, device, fast, confidence_threshold,
         model_dir=model_dir,
         refine_iters=refine_iters,
         predictions_dir=predictions_dir,
+        backend=backend,
+    )
+
+
+@main.command("export-onnx")
+@click.option(
+    "--model-dir",
+    type=click.Path(),
+    default=None,
+    help="ProstT5 model cache directory (default: ~/.vhold/models)",
+)
+@click.option(
+    "--output-dir",
+    type=click.Path(),
+    default=None,
+    help="Output for ONNX models (default: ~/.vhold/models/onnx_int8)",
+)
+@click.option(
+    "--quantization",
+    type=click.Choice(["avx512_vnni", "avx512", "avx2", "arm64"]),
+    default=None,
+    help="Quantization target (auto-detected if not specified)",
+)
+def export_onnx(model_dir, output_dir, quantization):
+    """Export ProstT5 to ONNX INT8 for faster CPU inference.
+
+    This is a one-time setup step. After export, use --backend onnx
+    with run/predict/align commands for 3-6x CPU speedup.
+
+    Requires: pip install vhold[onnx]
+
+    Examples:
+
+        vhold export-onnx
+
+        vhold export-onnx --quantization arm64
+    """
+    from vhold.features.onnx_export import export_and_quantize
+    export_and_quantize(
+        model_dir=model_dir,
+        output_dir=output_dir,
+        quantization_target=quantization,
     )
 
 
