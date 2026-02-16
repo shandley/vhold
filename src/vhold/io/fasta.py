@@ -20,6 +20,12 @@ class ProteinRecord:
     id: str
     sequence: str
     description: str = ""
+    # Genomic position (populated from GenBank/GFF, None for FASTA)
+    contig: str | None = None
+    start: int | None = None
+    end: int | None = None
+    strand: int | None = None  # +1 or -1
+    source_annotations: dict | None = None
 
     @property
     def length(self) -> int:

@@ -120,6 +120,12 @@ class ConsensusResult:
     # Novelty classification (indicates value of structural search)
     novelty: str = "none"  # database_match, close_homolog, remote_homolog, twilight_zone
 
+    # Genomic position (from GenBank/GFF input)
+    contig: str | None = None
+    start: int | None = None
+    end: int | None = None
+    strand: int | None = None
+
     # All hits by database
     hits_by_db: dict = field(default_factory=dict)
 
@@ -172,6 +178,13 @@ class ConsensusResult:
         for key, value in self.primary_annotation.items():
             if key not in result and key != "source":
                 result[key] = value
+
+        # Add genomic position if available
+        if self.contig is not None:
+            result["contig"] = self.contig
+            result["start"] = self.start
+            result["end"] = self.end
+            result["strand"] = self.strand
 
         # Add hit counts per database
         for db, hits in self.hits_by_db.items():

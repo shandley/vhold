@@ -1,0 +1,44 @@
+LOCUS       TEST_VIRUS              5000 bp    DNA     linear   VRL 01-JAN-2024
+DEFINITION  Test virus genome, complete genome.
+ACCESSION   TEST_VIRUS
+VERSION     TEST_VIRUS.1
+KEYWORDS    .
+SOURCE      Test virus
+  ORGANISM  Test virus
+            Viruses; ssRNA viruses.
+FEATURES             Location/Qualifiers
+     source          1..5000
+                     /organism="Test virus"
+                     /mol_type="genomic DNA"
+     CDS             100..600
+                     /gene="rdrp"
+                     /locus_tag="TV_001"
+                     /product="RNA-dependent RNA polymerase"
+                     /protein_id="TV_RDRP"
+                     /translation="MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLT
+                     LKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFF
+                     KDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGH"
+     CDS             complement(700..1200)
+                     /gene="coat"
+                     /locus_tag="TV_002"
+                     /product="coat protein"
+                     /protein_id="TV_COAT"
+                     /translation="MVSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLT
+                     LKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFF
+                     KDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEY"
+     CDS             1500..2000
+                     /locus_tag="TV_003"
+                     /product="hypothetical protein"
+                     /protein_id="TV_HYP"
+                     /translation="MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLT
+                     LKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYVQERTIFF
+                     KDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGH"
+     CDS             2100..2300
+                     /gene="small_orf"
+                     /locus_tag="TV_004"
+                     /product="small protein"
+                     /protein_id="TV_SMALL"
+                     /translation="MSKGEEL"
+ORIGIN
+        1 atgcatgcat gcatgcatgc atgcatgcat gcatgcatgc atgcatgcat gcatgcatgc
+//

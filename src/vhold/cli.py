@@ -344,11 +344,24 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     default=True,
     help="Auto-load contrastive LoRA adapter if installed (default: yes)",
 )
+@click.option(
+    "--input-format",
+    type=click.Choice(["auto", "fasta", "genbank", "gff"]),
+    default="auto",
+    help="Input file format (default: auto-detect by extension)",
+)
+@click.option(
+    "--genome-fasta",
+    type=click.Path(exists=True),
+    default=None,
+    help="Genome FASTA for GFF input (if not embedded in GFF)",
+)
 def run(
     input_file, output, database, databases, threads, batch_size, device,
     evalue, sensitivity, confidence_threshold, model_dir, prefix,
     fast, llm_classify, llm_model, triage, triage_threshold,
     classify, classifier_confidence, backend, lora,
+    input_format, genome_fasta,
 ):
     """Run the full vhold annotation pipeline.
 
@@ -357,8 +370,15 @@ def run(
     2. Search against BFVD/Viro3D databases using Foldseek
     3. Transfer annotations and generate output files
 
-    Example:
+    Accepts FASTA (.fasta/.fa/.faa), GenBank (.gb/.gbk), or GFF3 (.gff/.gff3).
+    GenBank/GFF input preserves genomic coordinates for neighborhood voting.
+
+    Examples:
         vhold run -i proteins.fasta -o results/ -t 4
+
+        vhold run -i genome.gb -o results/ -t 4
+
+        vhold run -i genes.gff3 --genome-fasta genome.fna -o results/
     """
     from vhold.subcommands.run import run_pipeline
     run_pipeline(
@@ -383,6 +403,8 @@ def run(
         classifier_confidence=classifier_confidence,
         backend=backend,
         use_lora=lora,
+        input_format=input_format,
+        genome_fasta=genome_fasta,
     )
 
 

@@ -5,7 +5,8 @@ from pathlib import Path
 from vhold.features.prostt5 import get_predictor
 from vhold.features.confidence import apply_confidence_mask
 from vhold.features.foldseek import search_databases, merge_results
-from vhold.io.fasta import read_fasta, write_fasta, write_3di_fasta
+from vhold.io import read_input
+from vhold.io.fasta import write_fasta, write_3di_fasta
 from vhold.results.parser import parse_dataframe_results
 from vhold.results.annotations import transfer_annotations_consensus
 from vhold.results.output import generate_report_consensus
@@ -36,6 +37,8 @@ def run_pipeline(
     classifier_confidence: float = 0.5,
     backend: str = "torch",
     use_lora: bool = True,
+    input_format: str | None = None,
+    genome_fasta: str | Path | None = None,
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -46,7 +49,7 @@ def run_pipeline(
     4. Output generation
 
     Args:
-        input_file: Input FASTA file
+        input_file: Input file (FASTA, GenBank, or GFF3)
         output_dir: Output directory
         database_dir: Database directory
         databases: Which databases to search ('all', 'bfvd', 'viro3d')
@@ -92,7 +95,11 @@ def run_pipeline(
     # Step 1: Read input sequences
     # ========================================
     logger.info("Step 1: Reading input sequences...")
-    sequences = read_fasta(input_path)
+    sequences = read_input(
+        input_path,
+        input_format=input_format,
+        fasta_path=genome_fasta,
+    )
     logger.info(f"Read {len(sequences)} sequences")
 
     if not sequences:
@@ -102,6 +109,18 @@ def run_pipeline(
     # Get sequence dict and lengths
     seq_dict = {rec.id: rec.sequence for rec in sequences.values()}
     seq_lengths = {rec.id: rec.length for rec in sequences.values()}
+
+    # Extract positional metadata (from GenBank/GFF input)
+    protein_positions = {
+        rec.id: {
+            "contig": rec.contig, "start": rec.start,
+            "end": rec.end, "strand": rec.strand,
+        }
+        for rec in sequences.values()
+        if rec.contig is not None
+    }
+    if protein_positions:
+        logger.info(f"Genomic positions: {len(protein_positions)} proteins")
     logger.info("")
 
     # ========================================
@@ -328,6 +347,15 @@ def run_pipeline(
             annotations[query_id] = ConsensusResult(
                 query_id=query_id, query_length=length
             )
+
+    # Propagate genomic positions to annotations
+    if protein_positions:
+        for qid, pos in protein_positions.items():
+            if qid in annotations:
+                annotations[qid].contig = pos["contig"]
+                annotations[qid].start = pos["start"]
+                annotations[qid].end = pos["end"]
+                annotations[qid].strand = pos["strand"]
 
     # Count total results
     annotated = sum(1 for a in annotations.values() if a.is_annotated)
