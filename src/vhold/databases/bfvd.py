@@ -204,7 +204,8 @@ def get_bfvd_annotation(
         lineage = enriched.get("lineage", "")
         if lineage:
             annotation["lineage"] = lineage
-        return annotation
+        from vhold.results.go_terms import enrich_annotation_with_go_ids
+        return enrich_annotation_with_go_ids(annotation)
 
     # Priority 2: Live UniProt cache
     if uniprot_cache is not None:

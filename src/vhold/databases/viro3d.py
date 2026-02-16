@@ -453,4 +453,5 @@ def get_viro3d_annotation(
                 if annotation["description"] in ("viral protein", ""):
                     annotation["description"] = f"Pfam: {pfam}"
 
-    return annotation
+    from vhold.results.go_terms import enrich_annotation_with_go_ids
+    return enrich_annotation_with_go_ids(annotation)
