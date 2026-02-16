@@ -450,6 +450,36 @@ def run_pipeline(
         logger.info("")
 
     # ========================================
+    # Step 4c: Neighborhood voting (auto-activates with GenBank/GFF input)
+    # ========================================
+    if protein_positions:
+        unknown_ids = [
+            qid for qid, r in annotations.items()
+            if r.functional_category == "unknown" and qid in protein_positions
+        ]
+        if unknown_ids:
+            logger.info(
+                f"Step 4c: Neighborhood voting for {len(unknown_ids)} "
+                f"unknown proteins..."
+            )
+            from vhold.results.neighborhood import vote_neighborhood
+            votes = vote_neighborhood(
+                unknown_ids, annotations, protein_positions,
+            )
+            for pid, (category, conf) in votes.items():
+                annotations[pid].functional_category = category
+                annotations[pid].classification_source = "neighborhood_vote"
+                logger.info(
+                    f"  {pid}: unknown -> {category} "
+                    f"(vote confidence: {conf:.3f})"
+                )
+            logger.info(
+                f"Neighborhood voting: {len(votes)}/{len(unknown_ids)} "
+                f"proteins reclassified"
+            )
+            logger.info("")
+
+    # ========================================
     # Step 5: Generate output files
     # ========================================
     logger.info("Step 5: Generating output files...")
