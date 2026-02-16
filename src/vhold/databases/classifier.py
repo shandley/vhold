@@ -74,7 +74,7 @@ def install_classifier_model(model_dir: Path, force: bool = False) -> None:
     import torch
 
     try:
-        checkpoint = torch.load(dest, map_location="cpu", weights_only=True)
+        checkpoint = torch.load(dest, map_location="cpu", weights_only=False)
         n_classes = checkpoint.get("n_classes", "unknown")
         logger.info(f"Classifier model installed: {n_classes} classes")
     except Exception as e:
