@@ -156,6 +156,23 @@ def run_pipeline(
                 f"{triage_result.stats['unmatched']} need full pipeline"
             )
 
+            # Validate triage matches with sequence alignment (if Foldseek DBs installed)
+            if triage_result.matched and db_dir:
+                from vhold.features.alignment_validation import validate_triage_matches
+
+                validated, rejected = validate_triage_matches(
+                    matches=triage_result.matched,
+                    query_sequences=seq_dict,
+                    db_dir=db_dir,
+                )
+                if rejected:
+                    logger.info(
+                        f"Alignment validation: rejected {len(rejected)} "
+                        f"low-identity matches"
+                    )
+                    triage_result.matched = validated
+                    triage_result.unmatched.extend(rejected)
+
             # Build ConsensusResults for matched proteins
             if triage_result.matched:
                 triage_annotations = build_embedding_consensus_results(

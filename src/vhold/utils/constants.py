@@ -129,6 +129,7 @@ DEFAULT_CONFIDENCE_THRESHOLD = 0.7
 # quality, not match quality). Threshold 0.90 gives 100% recall with min
 # similarity of 0.904 across all test proteins.
 DEFAULT_TRIAGE_THRESHOLD = 0.90
+DEFAULT_TRIAGE_MIN_IDENTITY = 0.15  # Reject triage matches below 15% global seq identity
 EMBEDDING_DIM = 1024
 EMBEDDING_DB_FILE = "vhold_embeddings.npz"
 
