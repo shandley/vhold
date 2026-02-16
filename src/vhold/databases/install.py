@@ -12,6 +12,8 @@ from vhold.utils.constants import (
     VIRO3D_BASE_URL,
     VIRO3D_FILES,
     get_db_dir,
+    get_model_dir,
+    get_vhold_zenodo_url,
 )
 from vhold.utils.logging import get_logger, setup_logging
 
@@ -136,6 +138,21 @@ def install_bfvd(db_dir: Path, force: bool = False) -> None:
     else:
         logger.info("BFVD taxonomy already installed")
 
+    # Download enriched metadata (from Zenodo, if available)
+    enriched_file = bfvd_dir / "bfvd_metadata_enriched.tsv"
+    enriched_url = get_vhold_zenodo_url("bfvd_enriched")
+    if not enriched_file.exists() or force:
+        if enriched_url is not None:
+            logger.info("Downloading enriched BFVD metadata...")
+            download_file(enriched_url, enriched_file, "BFVD enriched metadata")
+        else:
+            logger.info(
+                "Enriched BFVD metadata URL not configured. "
+                "Triage will use basic metadata only."
+            )
+    else:
+        logger.info("BFVD enriched metadata already installed")
+
     logger.info("BFVD installation complete")
 
 
@@ -218,12 +235,16 @@ def check_databases(db_dir: Path | None = None) -> dict[str, bool]:
 
     db_dir = Path(db_dir)
 
-    from vhold.utils.constants import EMBEDDING_DB_FILE
+    from vhold.utils.constants import CLASSIFIER_MODEL_FILE, EMBEDDING_DB_FILE
+
+    model_dir = get_model_dir()
 
     return {
         "bfvd": (db_dir / "bfvd" / "bfvd_metadata.tsv").exists(),
+        "bfvd_enriched": (db_dir / "bfvd" / "bfvd_metadata_enriched.tsv").exists(),
         "viro3d": (db_dir / "viro3d" / "viro3d_metadata.tsv").exists(),
         "embeddings": (db_dir / "embeddings" / EMBEDDING_DB_FILE).exists(),
+        "classifier": (model_dir / "classifier" / CLASSIFIER_MODEL_FILE).exists(),
     }
 
 
@@ -262,6 +283,7 @@ def install_databases(
     install_bfvd: bool = True,
     install_viro3d: bool = True,
     install_embeddings: bool = False,
+    install_classifier: bool = False,
     force: bool = False,
 ) -> None:
     """Install databases for vhold.
@@ -271,6 +293,7 @@ def install_databases(
         install_bfvd: Whether to install BFVD
         install_viro3d: Whether to install Viro3D
         install_embeddings: Whether to install embedding database for triage
+        install_classifier: Whether to install MLP classifier model
         force: Force re-download even if files exist
     """
     setup_logging()
@@ -283,7 +306,7 @@ def install_databases(
     db_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Installing databases to {db_dir}")
 
-    if not install_bfvd and not install_viro3d and not install_embeddings:
+    if not any([install_bfvd, install_viro3d, install_embeddings, install_classifier]):
         logger.warning("No databases selected for installation")
         return
 
@@ -302,11 +325,17 @@ def install_databases(
         from vhold.databases.embeddings import install_embedding_db
         install_embedding_db(db_dir, force=force)
 
+    if install_classifier:
+        logger.info("Installing classifier model...")
+        from vhold.databases.classifier import install_classifier_model
+        model_dir = get_model_dir()
+        install_classifier_model(model_dir, force=force)
+
     logger.info("Database installation complete!")
 
     # Show summary
     status = check_databases(db_dir)
     logger.info("Installed databases:")
     for db_name, installed in status.items():
-        status_str = "✓ installed" if installed else "✗ not installed"
+        status_str = "installed" if installed else "not installed"
         logger.info(f"  {db_name}: {status_str}")

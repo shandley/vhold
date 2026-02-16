@@ -6,14 +6,13 @@ embedding database used for embedding-based triage.
 
 from pathlib import Path
 
-from vhold.utils.constants import EMBEDDING_DB_FILE, get_db_dir
+from vhold.utils.constants import EMBEDDING_DB_FILE, get_db_dir, get_vhold_zenodo_url
 from vhold.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# URL for the pre-computed embedding database
-# This will be populated once the database is generated and hosted
-EMBEDDING_DB_URL = None  # TBD: hosting location
+# URL for the pre-computed embedding database (from Zenodo)
+EMBEDDING_DB_URL = get_vhold_zenodo_url("embeddings")
 
 
 def get_embedding_db_path(db_dir: Path | None = None) -> Path:

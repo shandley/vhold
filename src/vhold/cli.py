@@ -44,18 +44,34 @@ def main():
     default=False,
     help="Download embedding database for triage mode",
 )
-def install(database, bfvd, viro3d, force, embeddings):
+@click.option(
+    "--classifier/--no-classifier",
+    default=False,
+    help="Download MLP classifier model",
+)
+@click.option(
+    "--all-models",
+    is_flag=True,
+    default=False,
+    help="Download all optional models (embeddings + classifier)",
+)
+def install(database, bfvd, viro3d, force, embeddings, classifier, all_models):
     """Download and install reference databases.
 
     Downloads BFVD and Viro3D Foldseek databases and metadata files
     required for annotation.
     """
+    if all_models:
+        embeddings = True
+        classifier = True
+
     from vhold.databases.install import install_databases
     install_databases(
         database_dir=database,
         install_bfvd=bfvd,
         install_viro3d=viro3d,
         install_embeddings=embeddings,
+        install_classifier=classifier,
         force=force,
     )
 

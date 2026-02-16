@@ -58,6 +58,30 @@ VIRO3D_FILES = {
     "annotations": "viro3d_annotation_expansion.tar.gz",  # 12.3 MB
 }
 
+# vHold supplementary models and databases (Zenodo)
+# Update VHOLD_ZENODO_RECORD_ID after running scripts/upload_zenodo.py
+VHOLD_ZENODO_RECORD_ID = 18652045
+VHOLD_ZENODO_FILES = {
+    "embeddings": "vhold_embeddings.npz",  # 822 MB
+    "bfvd_enriched": "bfvd_metadata_enriched.tsv",  # 79 MB
+    "classifier": "vhold_classifier.pt",  # 2.6 MB
+}
+
+
+def get_vhold_zenodo_url(file_key: str) -> str | None:
+    """Get Zenodo download URL for a vHold supplementary file.
+
+    Args:
+        file_key: Key in VHOLD_ZENODO_FILES dict
+
+    Returns:
+        Full URL or None if record ID not configured
+    """
+    if VHOLD_ZENODO_RECORD_ID is None:
+        return None
+    filename = VHOLD_ZENODO_FILES[file_key]
+    return f"https://zenodo.org/records/{VHOLD_ZENODO_RECORD_ID}/files/{filename}"
+
 # ProstT5 model
 PROSTT5_MODEL_NAME = "Rostlab/ProstT5"
 

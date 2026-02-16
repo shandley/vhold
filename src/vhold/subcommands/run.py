@@ -390,7 +390,10 @@ def run_pipeline(
                     )
                 logger.info("")
         else:
-            logger.debug("MLP classifier not installed, skipping Step 4a.5")
+            logger.info(
+                "MLP classifier not installed, skipping Step 4a.5. "
+                "Run 'vhold install --classifier' to enable."
+            )
 
     # ========================================
     # Step 4b: LLM reclassification (optional)

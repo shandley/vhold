@@ -1,6 +1,6 @@
 # vHold Project State - Claude Code Context
 
-Last updated: 2026-02-15
+Last updated: 2026-02-16
 
 ## Project Overview
 
@@ -75,7 +75,7 @@ vHold Pipeline:
 
 Fast pre-screening using ProstT5 encoder-only embeddings (~0.1s/protein) to skip the expensive decoder for known proteins. End-to-end wired in CLI and pipeline.
 
-**Status**: Code complete, DB built, threshold calibrated. Only missing piece: hosting URL for `vhold install --embeddings`.
+**Status**: Complete. Hosted on Zenodo (record 18652045). Install via `vhold install --embeddings`.
 
 | Metric | Value |
 |--------|-------|
@@ -97,13 +97,13 @@ Fast pre-screening using ProstT5 encoder-only embeddings (~0.1s/protein) to skip
 
 At threshold 0.90: 100% recall (all 85 test proteins matched, min similarity 0.904). Remaining 14 false positives are annotation quality issues (deleted UniProt entries, UniParc-only IDs, ground truth category debates).
 
-**Enriched BFVD metadata**: `~/.vhold/databases/bfvd/bfvd_metadata_enriched.tsv` (79 MB, 345,730 entries). Contains protein names, gene names, GO BP/MF, Pfam domains, keywords, function_cc, lineage from UniProt REST API. Generated in separate `bfvd-annotations` repo.
+**Enriched BFVD metadata**: `~/.vhold/databases/bfvd/bfvd_metadata_enriched.tsv` (79 MB, 345,730 entries). Contains protein names, gene names, GO BP/MF, Pfam domains, keywords, function_cc, lineage from UniProt REST API. Hosted on Zenodo (record 18652045), auto-downloaded with `vhold install`.
 
 ### MLP Functional Classifier (`--classify`) -- COMPLETE
 
 Lightweight MLP trained on frozen ProstT5 encoder embeddings to classify viral proteins into functional categories. Runs automatically in the pipeline (Step 4a.5) for any protein classified as "unknown" by keyword/Pfam/GO matching.
 
-**Status**: Code complete, model trained, integrated into pipeline. Classifier auto-runs when model installed; disable with `--no-classify`.
+**Status**: Complete. Model hosted on Zenodo (record 18652045). Install via `vhold install --classifier`. Auto-runs when installed; disable with `--no-classify`.
 
 | Metric | Value |
 |--------|-------|
@@ -239,18 +239,12 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 
 ## Known Issues
 
-- **Embedding DB not downloadable**: `EMBEDDING_DB_URL = None` in `databases/embeddings.py`. Users must generate locally via `scripts/build_embedding_db.py` or place manually at `~/.vhold/databases/embeddings/vhold_embeddings.npz`.
-- **Enriched BFVD metadata not downloadable**: Must be copied manually from `bfvd-annotations` repo to `~/.vhold/databases/bfvd/bfvd_metadata_enriched.tsv`.
-- **Classifier model not downloadable**: Must be trained locally via `scripts/train_classifier.py` or placed manually at `~/.vhold/models/classifier/vhold_classifier.pt`.
 - **LoRA adapter not yet trained**: Code complete but training requires CUDA GPU. MPS too slow (~60 sec/batch). Run on A100/H100: `scripts/train_contrastive.py --device cuda`.
 - **ONNX export not yet validated**: Code complete but not tested end-to-end. Run `vhold export-onnx` then `scripts/validate_onnx_quantization.py`.
 
 ## Remaining Work
 
 ### Immediate (before release)
-- **Host embedding DB**: Upload 822 MB .npz to Zenodo/S3, set `EMBEDDING_DB_URL` in `databases/embeddings.py`
-- **Host enriched BFVD metadata**: Bundle with embedding DB or host separately, wire into `vhold install`
-- **Host classifier model**: Bundle 2.6 MB checkpoint with embedding DB or host separately
 - **Train contrastive LoRA adapter** (deferred -- needs CUDA): Code ready, run on A100/H100. Marginal value at current stage (83.5% precision limited by annotation quality, not embedding quality)
 - **Validate ONNX export**: Run export + validation script on target hardware
 - **Tests for triage + LLM + classifier integration**: End-to-end test with `--triage --classify --llm-classify`

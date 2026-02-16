@@ -1,6 +1,6 @@
 # vHold Roadmap: Strategic Directions
 
-Last updated: 2026-02-15
+Last updated: 2026-02-16
 
 ## Context
 
@@ -175,6 +175,7 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 - **End-to-end `--triage` wiring**: Full pipeline integration — embedding search → annotation transfer → keyword classification → LLM reclassification. CLI flags: `--triage` and `--triage-threshold`. Decoder + Foldseek steps automatically skipped when all proteins matched.
 - **LLM reclassification of triage unknowns**: Extended `--llm-classify` to reclassify embedding-matched proteins with "unknown" category. Claude Haiku correctly resolves accessory/regulatory proteins (e.g., SARS-CoV-2 ORF7a, ORF6, ORF3a → host_interaction). Improved precision from 77.6% to 83.5%.
 - **Contrastive LoRA fine-tuning code**: Complete implementation of SupCon-Hard + multi-granularity contrastive loss, CategoryBalancedSampler, LoRA integration into EmbeddingExtractor with `merge_and_unload()`. Training scripts, evaluation scripts, and embedding DB rebuild script all written and tested. **Training deferred** — MPS too slow (~60 sec/batch, 35+ hours for 1000 proteins). Needs CUDA GPU. Cost-benefit analysis: remaining triage precision errors are annotation quality issues (deleted UniProt entries), not embedding quality. Marginal improvement (~2-7% precision) doesn't justify compute on available hardware.
+- **Zenodo hosting for models and databases**: All supplementary files hosted on Zenodo record 18652045 (DOI: 10.5281/zenodo.18652045). Embedding DB (822 MB), enriched BFVD metadata (83 MB), and MLP classifier (2.6 MB) downloadable via `vhold install --embeddings --classifier` or `vhold install --all-models`. Enriched BFVD metadata auto-downloads with `vhold install --bfvd`.
 
 ## Updated Priority Ranking
 
