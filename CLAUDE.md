@@ -30,6 +30,7 @@ vHold Pipeline:
 4b. (Auto) LLM reclassification of unknown proteins (--llm/--no-llm, auto-enabled with API key)
 4c. (Auto) Neighborhood voting: gene-order-based reclassification (GenBank/GFF input only)
 5. Generate output: TSV (with GO IDs), summary JSON, dark matter report
+6. (Optional) Export to metagenomic formats: anvi'o, vConTACT2/3, DRAM-v, GFF3
 ```
 
 ## Key Source Files
@@ -49,7 +50,9 @@ vHold Pipeline:
 | `src/vhold/subcommands/run.py` | Main pipeline orchestration |
 | `src/vhold/subcommands/align.py` | Multiple structural alignment pipeline |
 | `src/vhold/databases/bfvd.py` | BFVD metadata loading + enriched annotation lookup |
-| `src/vhold/databases/embeddings.py` | Embedding DB path/install (URL not yet configured) |
+| `src/vhold/results/export.py` | Metagenomic format export (anvi'o, vConTACT2/3, DRAM-v, GFF3) |
+| `src/vhold/subcommands/export.py` | Export subcommand orchestration |
+| `src/vhold/databases/embeddings.py` | Embedding DB path/install (Zenodo record 18652045) |
 | `src/vhold/databases/classifier.py` | Classifier checkpoint path management |
 | `src/vhold/databases/lora.py` | LoRA adapter path management |
 | `src/vhold/results/annotations.py` | Consensus annotation transfer |
@@ -60,7 +63,7 @@ vHold Pipeline:
 | `src/vhold/utils/constants.py` | Thresholds, DB URLs, embedding config |
 | `src/vhold/io/genbank.py` | GenBank CDS feature extraction with coordinates |
 | `src/vhold/io/gff.py` | GFF3 parsing with embedded ##FASTA support |
-| `src/vhold/cli.py` | Click CLI (run, predict, compare, install, align, export-onnx) |
+| `src/vhold/cli.py` | Click CLI (run, predict, compare, install, align, export, export-onnx) |
 | `scripts/train_contrastive.py` | Contrastive LoRA training (SupCon-Hard + multi-granularity) |
 | `scripts/evaluate_contrastive.py` | Before/after evaluation (MAP@k, NDCG, silhouette) |
 | `scripts/rebuild_embedding_db.py` | Re-extract 436K embeddings with LoRA-merged encoder |
@@ -68,7 +71,7 @@ vHold Pipeline:
 | `scripts/generate_llm_labels.py` | Batch LLM label generation for training data expansion |
 | `scripts/calibrate_triage_threshold.py` | Triage threshold calibration across 4 case studies |
 | `scripts/build_go_term_map.py` | Build GO term name→ID JSON from OBO file |
-| `tests/` | 609 tests (pytest) |
+| `tests/` | 658 tests (pytest) |
 
 ## Implemented Features
 
@@ -244,6 +247,23 @@ Uses gene order to reclassify remaining unknown proteins when genomic positions 
 - Cross-contig isolation: genes on different contigs do not vote for each other
 - No CLI flag needed — activates automatically when positions are available
 
+### Metagenomic Export (`vhold export` / `--export-format`) -- COMPLETE
+
+Export vHold results to formats compatible with the viral metagenomics ecosystem. Dual interface: standalone `vhold export` for post-hoc conversion, or `--export-format` on `vhold run` for integrated pipeline export.
+
+| Format | Output File | Target Tool |
+|--------|-----------|-------------|
+| anvi'o | `*_anvio_functions.txt` | anvi'o functional annotation import |
+| vConTACT2 | `*_vcontact2_gene2genome.csv` | vConTACT2 protein clustering |
+| vConTACT3 | `vcontact3/gene2genome.tsv` + `genome_lengths.tsv` | vConTACT3 clustering |
+| DRAM-v | `*_dramv_annotations.tsv` | DRAM-v metabolic annotation |
+| GFF3 | `*_annotations.gff3` | General annotation viewers |
+
+- Contig/scaffold IDs derived from protein IDs using Prodigal (`_N` suffix) and geNomad provirus patterns
+- anvi'o: multi-row per gene (structural hit, Pfam, GO BP, GO MF, category)
+- GFF3: only includes proteins with genomic coordinates (from GenBank/GFF input)
+- No new dependencies (all formats are simple TSV/CSV/GFF3)
+
 ### LLM Classification (`--llm/--no-llm`)
 - Post-processing step using Claude to reclassify proteins where keywords return "unknown"
 - **Auto-enabled** when `ANTHROPIC_API_KEY` is set; `--no-llm` to opt out
@@ -302,10 +322,11 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 ### Immediate (before release)
 - **Train contrastive LoRA adapter** (deferred -- needs CUDA): Code ready, run on A100/H100. Marginal value at current stage (83.5% precision limited by annotation quality, not embedding quality)
 - **Validate ONNX export**: Run export + validation script on target hardware
+- **Manuscript / Application Note**: Bioinformatics Application Note with 5 case studies
 
 ### Medium-term
-- **Metagenomic pipeline integration**: Accept VirSorter2/VIBRANT/geNomad output, produce DRAM-v/anvi'o compatible annotations. Highest user-base expansion opportunity.
-- **DRAM-v/anvi'o output formats**: Generate format-specific output files (now possible with GO IDs + positions)
+- **Metagenomic input metadata**: Parse VirSorter2 score TSV, geNomad taxonomy TSV, VIBRANT quality TSV to carry upstream viral classification through to output. (Output export to anvi'o/vConTACT2/3/DRAM-v/GFF3 is COMPLETE via `vhold export`.)
+- **Docker container**: Package vHold + ProstT5 + Foldseek + databases for Biocontainers/Docker Hub
 - **Iterative label refinement**: Use v3 classifier as filter for another round of LLM label agreement filtering
 - **Batch processing improvements**: Batch same-length sequences for ProstT5
 
@@ -354,6 +375,15 @@ uv run vhold compare -p predictions/ -o results/ -t 32
 
 # Multiple structural alignment
 uv run vhold align -i proteins.fasta -o alignment/ --fast --device cpu -t 8
+
+# Export to metagenomic tool formats (all formats by default)
+uv run vhold export -i output/vhold_results.tsv -o exports/
+
+# Export specific formats only
+uv run vhold export -i output/vhold_results.tsv -o exports/ -f anvio -f dramv
+
+# Integrated export during pipeline run
+uv run vhold run -i input.fasta -o output/ --export-format anvio --export-format gff3
 
 # Database setup
 uv run vhold install

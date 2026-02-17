@@ -1,6 +1,6 @@
 # vHold Roadmap: Strategic Directions
 
-Last updated: 2026-02-16
+Last updated: 2026-02-17
 
 ## Context
 
@@ -69,28 +69,29 @@ Run DIAMOND/BLAST as a fast pre-screen. Only invoke ProstT5 + Foldseek on protei
 
 ### 2. Metagenomic Pipeline Integration
 
-**Status**: Not started
+**Status**: Output export COMPLETE; input metadata parsing remaining
 **Value**: High -- meets users where they are
-**Effort**: Moderate to high
+**Effort**: Remaining: low (input metadata only)
 
 The real market for vHold is viromics. Integration points:
 
-**Input formats to accept**:
-- VirSorter2 output (viral contigs + predicted proteins)
-- VIBRANT output (viral bins)
-- geNomad output (viral sequences with protein predictions)
+**Input formats accepted**:
+- VirSorter2 output (viral contigs + predicted proteins) — protein FASTA works directly
+- VIBRANT output (viral bins) — protein FASTA works directly
+- geNomad output (viral sequences with protein predictions) — protein FASTA works directly
+- GenBank/GFF3 input with genomic coordinates (since v0.x)
 - Generic: any FASTA of predicted viral proteins
 
-**Output formats to produce**:
-- DRAM-v compatible annotations
-- anvi'o compatible functional annotations
-- vConTACT2 compatible protein clusters
-- Standard GFF3 with structural annotation features
+**Output formats produced** (`vhold export` or `vhold run --export-format`):
+- **anvi'o** functions-txt (multi-row: structural, Pfam, GO BP, GO MF, category)
+- **vConTACT2** gene2genome.csv (protein_id, contig_id, keywords)
+- **vConTACT3** gene2genome.tsv + genome_lengths.tsv
+- **DRAM-v** supplementary annotations TSV (scaffold, gene_position, strandedness, etc.)
+- **GFF3** standard annotation format (proteins with genomic coordinates only)
 
-**Design questions**:
-- Which pipeline integration is most impactful first?
-- Do we need to handle nucleotide input (run prodigal ourselves) or always require protein FASTA?
-- How do we handle the scale? Metagenomic datasets can have 10,000+ viral proteins.
+**Remaining work**:
+- Parse VirSorter2/VIBRANT/geNomad metadata files to auto-populate contig IDs and scaffold info
+- Currently contig IDs are derived from protein IDs via Prodigal/geNomad naming conventions
 
 ### 3. Pre-Computed 3Di for Reference Proteomes
 
@@ -180,6 +181,7 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 - **GO term ID propagation**: Resolves GO IDs (GO:0039694 format) from term names using a bundled 125K-entry name→ID map generated from GO OBO file. Handles BFVD inline IDs and Viro3D plain names. Adds `go_bp_ids`, `go_mf_ids` columns to TSV output for TopGO/DRAM-v/anvi'o compatibility.
 - **GenBank/GFF3 input parsing**: Accepts GenBank (`.gb`/`.gbk`) and GFF3 (`.gff`/`.gff3`) files via `--input-format auto` (default). Extracts proteins with genomic coordinates (contig, start, end, strand). Auto-detects format by extension. FASTA input unchanged. New CLI options: `--input-format`, `--genome-fasta`.
 - **Neighborhood voting**: Gene-order-based reclassification of remaining unknowns using ±5 nearest genes on the same contig. Distance + confidence weighted majority voting. Auto-activates when positional data is present (GenBank/GFF input). Added as Step 4c in the pipeline.
+- **Metagenomic output export** (`vhold export`): Five output formats for downstream viral metagenomics tools: anvi'o functions-txt, vConTACT2 gene2genome.csv, vConTACT3 gene2genome.tsv + genome_lengths.tsv, DRAM-v supplementary annotations TSV, and GFF3 annotations. Dual interface: standalone `vhold export -i results.tsv -o exports/` for post-hoc conversion + `vhold run --export-format anvio` for integrated pipeline export. Contig/scaffold IDs derived from protein IDs using Prodigal and geNomad naming conventions. 47 new tests (38 unit + 9 CLI). 658 total tests.
 
 ## Updated Priority Ranking
 
@@ -194,7 +196,7 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 | -- | ~~GO term ID propagation~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — 125K name→ID map, go_bp_ids/go_mf_ids in output |
 | -- | ~~GenBank/GFF input~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — auto-detect, positions in output, `--input-format` |
 | -- | ~~Neighborhood voting~~ | ~~High~~ | ~~Low~~ | **COMPLETE** — Step 4c, ±5 genes, distance-weighted voting |
-| 2 | Metagenomic integration | High | High | **Next priority** |
+| 2 | Metagenomic integration | High | High | **Output COMPLETE** (`vhold export`); input metadata remaining |
 | -- | Iterative label refinement | Medium | Low | Use v3 as filter for another agreement round |
 | -- | Contrastive encoder fine-tuning | Medium | High | **Code complete, deferred** — needs CUDA GPU; marginal value at current precision |
 | 4 | Emerging pathogen workflow | High (niche) | Low | Do when packaging for release |

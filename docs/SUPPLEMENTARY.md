@@ -764,21 +764,21 @@ def calculate_priority(protein):
 
 | Metric | Value |
 |--------|-------|
-| Total Python source code | ~9,300 lines |
-| Total test code | ~3,700 lines |
-| Total documentation | ~1,700 lines |
-| Number of tests | 319 |
-| Test modules | 12 |
-| Source modules | 36 |
+| Total Python source code | ~14,600 lines |
+| Total test code | ~8,900 lines |
+| Number of tests | 658 |
+| Test modules | 26 |
+| Source modules | 55 |
 
-### S13.1 Module Breakdown
+### S13.1 Module Breakdown (key modules)
 
 | Module | Purpose | Lines |
 |--------|---------|-------|
 | validation/cross_database.py | Validation framework | ~800 |
 | results/consensus.py | Consensus scoring | ~570 |
-| databases/esm_atlas.py | ESM Atlas integration | ~550 |
-| databases/metagenomics.py | Serratus/Logan | ~500 |
-| benchmarks/evaluation.py | Evaluation pipeline | ~350 |
+| results/export.py | Metagenomic format export | ~350 |
 | results/categories.py | Functional classification | ~450 |
 | results/dark_matter.py | Dark matter analysis | ~300 |
+| features/prostt5.py | ProstT5 3Di prediction | ~400 |
+| features/embeddings.py | Embedding triage | ~350 |
+| subcommands/run.py | Main pipeline orchestration | ~530 |
