@@ -356,12 +356,20 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     default=None,
     help="Genome FASTA for GFF input (if not embedded in GFF)",
 )
+@click.option(
+    "--export-format",
+    "export_formats",
+    multiple=True,
+    type=click.Choice(["anvio", "vcontact2", "vcontact3", "dramv", "gff3", "all"]),
+    default=None,
+    help="Auto-export to metagenomic format(s) after pipeline completes",
+)
 def run(
     input_file, output, database, databases, threads, batch_size, device,
     evalue, sensitivity, confidence_threshold, model_dir, prefix,
     fast, llm_classify, llm_model, triage, triage_threshold,
     classify, classifier_confidence, backend, lora,
-    input_format, genome_fasta,
+    input_format, genome_fasta, export_formats,
 ):
     """Run the full vhold annotation pipeline.
 
@@ -416,6 +424,7 @@ def run(
         use_lora=lora,
         input_format=input_format,
         genome_fasta=genome_fasta,
+        export_formats=list(export_formats) if export_formats else None,
     )
 
 
@@ -509,6 +518,56 @@ def align(input_file, output, threads, device, fast, confidence_threshold,
         refine_iters=refine_iters,
         predictions_dir=predictions_dir,
         backend=backend,
+    )
+
+
+@main.command()
+@click.option(
+    "-i", "--input",
+    "input_tsv",
+    required=True,
+    type=click.Path(exists=True),
+    help="Input vHold results TSV file (*_results.tsv)",
+)
+@click.option(
+    "-o", "--output",
+    required=True,
+    type=click.Path(),
+    help="Output directory for exported files",
+)
+@click.option(
+    "-f", "--format",
+    "formats",
+    multiple=True,
+    type=click.Choice(["anvio", "vcontact2", "vcontact3", "dramv", "gff3", "all"]),
+    default=["all"],
+    help="Export format(s) (default: all). Can specify multiple: -f anvio -f dramv",
+)
+@click.option(
+    "--prefix",
+    default="vhold",
+    help="Prefix for output files (default: vhold)",
+)
+def export(input_tsv, output, formats, prefix):
+    """Export vHold results to metagenomic tool formats.
+
+    Converts an existing vHold results TSV to formats compatible with
+    anvi'o, vConTACT2/3, DRAM-v, and standard GFF3.
+
+    Examples:
+
+        vhold export -i results/vhold_results.tsv -o exports/
+
+        vhold export -i results.tsv -o exports/ -f anvio -f dramv
+
+        vhold export -i results.tsv -o exports/ -f vcontact3
+    """
+    from vhold.subcommands.export import run_export
+    run_export(
+        input_tsv=input_tsv,
+        output_dir=output,
+        formats=list(formats),
+        prefix=prefix,
     )
 
 

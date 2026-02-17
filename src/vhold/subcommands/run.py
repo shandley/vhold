@@ -39,6 +39,7 @@ def run_pipeline(
     use_lora: bool = True,
     input_format: str | None = None,
     genome_fasta: str | Path | None = None,
+    export_formats: list[str] | None = None,
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -524,3 +525,26 @@ def run_pipeline(
         logger.info(f"  Structural search: {annotated - embedding_matched}")
     logger.info(f"  Multi-DB consensus: {with_consensus} ({consensus_rate:.1f}% of annotated)")
     logger.info(f"  Unannotated: {len(annotations) - annotated}")
+
+    # ========================================
+    # Step 6: Export to metagenomic formats (optional)
+    # ========================================
+    if export_formats:
+        logger.info("")
+        logger.info(f"Step 6: Exporting to metagenomic formats: {export_formats}")
+        from vhold.results.export import export_all_formats
+
+        export_dir = output_path / "exports"
+        export_files = export_all_formats(
+            results=annotations,
+            output_dir=export_dir,
+            formats=export_formats,
+            prefix=prefix,
+        )
+
+        for fmt, path in export_files.items():
+            if isinstance(path, dict):
+                for sub_fmt, sub_path in path.items():
+                    output_files[f"export_{fmt}_{sub_fmt}"] = sub_path
+            else:
+                output_files[f"export_{fmt}"] = path
