@@ -1,6 +1,6 @@
 # vHold Project State - Claude Code Context
 
-Last updated: 2026-02-14
+Last updated: 2026-02-17
 
 ## Project Overview
 
@@ -27,7 +27,7 @@ vHold Pipeline:
 4. Transfer annotations with multi-database consensus scoring
 4a. Merge triage results with structural search results
 4a.5. (Auto) MLP classifier: reclassify "unknown" proteins using trained embedding classifier
-4b. (Optional) LLM reclassification of unknown proteins (--llm-classify)
+4b. (Auto) LLM reclassification of unknown proteins (--llm/--no-llm, auto-enabled with API key)
 4c. (Auto) Neighborhood voting: gene-order-based reclassification (GenBank/GFF input only)
 5. Generate output: TSV (with GO IDs), summary JSON, dark matter report
 ```
@@ -68,7 +68,7 @@ vHold Pipeline:
 | `scripts/generate_llm_labels.py` | Batch LLM label generation for training data expansion |
 | `scripts/calibrate_triage_threshold.py` | Triage threshold calibration across 4 case studies |
 | `scripts/build_go_term_map.py` | Build GO term name→ID JSON from OBO file |
-| `tests/` | 528 tests (pytest) |
+| `tests/` | 609 tests (pytest) |
 
 ## Implemented Features
 
@@ -244,12 +244,14 @@ Uses gene order to reclassify remaining unknown proteins when genomic positions 
 - Cross-contig isolation: genes on different contigs do not vote for each other
 - No CLI flag needed — activates automatically when positions are available
 
-### LLM Classification (`--llm-classify`)
+### LLM Classification (`--llm/--no-llm`)
 - Post-processing step using Claude to reclassify proteins where keywords return "unknown"
+- **Auto-enabled** when `ANTHROPIC_API_KEY` is set; `--no-llm` to opt out
 - Targets `classification_source in ("keywords", "embedding")` AND `functional_category == "unknown"`
 - Resolves: SARS-CoV-2 accessory proteins (ORF3a/6/7a/8), paramyxovirus V/C proteins, Ebola VP35, Rabies M2
 - 3-layer graceful degradation: no anthropic package, no API key, per-protein API errors
 - Default model: `claude-haiku-4-5-20251001` (configurable via `--llm-model`)
+- Cost: ~$0.01 per run
 - Requires: `pip install vhold[llm]` + `ANTHROPIC_API_KEY` environment variable
 
 ### Fast Mode (`--fast`)
@@ -300,9 +302,9 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 ### Immediate (before release)
 - **Train contrastive LoRA adapter** (deferred -- needs CUDA): Code ready, run on A100/H100. Marginal value at current stage (83.5% precision limited by annotation quality, not embedding quality)
 - **Validate ONNX export**: Run export + validation script on target hardware
-- **Tests for triage + LLM + classifier integration**: End-to-end test with `--triage --classify --llm-classify`
 
 ### Medium-term
+- **Metagenomic pipeline integration**: Accept VirSorter2/VIBRANT/geNomad output, produce DRAM-v/anvi'o compatible annotations. Highest user-base expansion opportunity.
 - **DRAM-v/anvi'o output formats**: Generate format-specific output files (now possible with GO IDs + positions)
 - **Iterative label refinement**: Use v3 classifier as filter for another round of LLM label agreement filtering
 - **Batch processing improvements**: Batch same-length sequences for ProstT5
@@ -329,8 +331,9 @@ uv run vhold run -i genes.gff3 --genome-fasta genome.fna -o output/
 # With embedding triage (skip decoder for known proteins)
 uv run vhold run -i input.fasta -o output/ --triage
 
-# With LLM classification (requires anthropic package + API key)
-uv run vhold run -i input.fasta -o output/ --triage --llm-classify
+# LLM classification auto-enabled when ANTHROPIC_API_KEY is set
+# To disable: --no-llm
+uv run vhold run -i input.fasta -o output/ --triage --no-llm
 
 # Disable LoRA adapter (enabled by default when installed)
 uv run vhold run -i input.fasta -o output/ --triage --no-lora
