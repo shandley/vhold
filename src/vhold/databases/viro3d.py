@@ -120,6 +120,7 @@ class Viro3DAnnotationExpansion:
         self._pfam_index: dict[str, dict] = {}
         self._go_bp_index: dict[str, dict] = {}
         self._go_mf_index: dict[str, dict] = {}
+        self._go_cc_index: dict[str, dict] = {}
         self._superfamily_index: dict[str, dict] = {}
         self._gene3d_index: dict[str, dict] = {}
 
@@ -216,6 +217,14 @@ class Viro3DAnnotationExpansion:
             self._go_mf_index = self._build_index(self._go_mf_df, "Molecular Function Annotation")
             logger.info(f"Indexed {len(self._go_mf_index)} GO MF annotations")
 
+        # Load GO Cellular Component
+        self._go_cc_df = self._load_annotation_file(
+            "Viro3D_proteins_with_GO_cellular_component_annotation_expansion.csv"
+        )
+        if self._go_cc_df is not None:
+            self._go_cc_index = self._build_index(self._go_cc_df, "Cellular Component Annotation")
+            logger.info(f"Indexed {len(self._go_cc_index)} GO CC annotations")
+
         # Load SUPERFAMILY
         self._superfamily_df = self._load_annotation_file(
             "Viro3D_proteins_with_SUPERFAMILY_annotation_expansion.csv"
@@ -265,6 +274,9 @@ class Viro3DAnnotationExpansion:
         if viro3d_id in self._go_mf_index:
             result["go_mf"] = self._go_mf_index[viro3d_id]
 
+        if viro3d_id in self._go_cc_index:
+            result["go_cc"] = self._go_cc_index[viro3d_id]
+
         if viro3d_id in self._superfamily_index:
             result["superfamily"] = self._superfamily_index[viro3d_id]
 
@@ -281,6 +293,7 @@ class Viro3DAnnotationExpansion:
             self._pfam_index
             or self._go_bp_index
             or self._go_mf_index
+            or self._go_cc_index
             or self._superfamily_index
             or self._gene3d_index
         )
@@ -294,6 +307,7 @@ class Viro3DAnnotationExpansion:
             "pfam_count": len(self._pfam_index),
             "go_bp_count": len(self._go_bp_index),
             "go_mf_count": len(self._go_mf_index),
+            "go_cc_count": len(self._go_cc_index),
             "superfamily_count": len(self._superfamily_index),
             "gene3d_count": len(self._gene3d_index),
         }
@@ -425,6 +439,10 @@ def get_viro3d_annotation(
         if "go_mf" in expanded:
             annotation["go_mf"] = expanded["go_mf"]["annotation"]
             annotation["go_mf_confidence"] = expanded["go_mf"]["confidence"]
+
+        if "go_cc" in expanded:
+            annotation["go_cc"] = expanded["go_cc"]["annotation"]
+            annotation["go_cc_confidence"] = expanded["go_cc"]["confidence"]
 
         if "superfamily" in expanded:
             annotation["superfamily"] = expanded["superfamily"]["annotation"]

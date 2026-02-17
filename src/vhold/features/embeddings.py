@@ -625,14 +625,23 @@ def _lookup_annotation(
             except (FileNotFoundError, Exception):
                 _metadata_state["viro3d_annotations"] = pd.DataFrame()
 
+        if "viro3d_expansion" not in _metadata_state:
+            try:
+                from vhold.databases.viro3d import get_annotation_expansion
+                _metadata_state["viro3d_expansion"] = get_annotation_expansion(db_dir)
+            except Exception:
+                _metadata_state["viro3d_expansion"] = None
+
         metadata = _metadata_state["viro3d_metadata"]
         annotations_df = _metadata_state["viro3d_annotations"]
+        expansion = _metadata_state["viro3d_expansion"]
         if len(metadata) > 0:
             from vhold.databases.viro3d import get_viro3d_annotation
             ann = get_viro3d_annotation(
                 target_id,
                 metadata,
                 annotations_df if len(annotations_df) > 0 else None,
+                annotation_expansion=expansion,
             )
             if ann:
                 return ann

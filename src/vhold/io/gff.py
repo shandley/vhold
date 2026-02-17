@@ -51,18 +51,26 @@ def read_gff(
     # Parse GFF3 and extract features + embedded FASTA
     features, embedded_fasta = _parse_gff3(gff_path)
 
-    # Load genome sequences
-    genome_seqs = {}
+    # Load sequences from external FASTA or embedded section
+    fasta_seqs = {}
     if fasta_path:
-        genome_seqs = _read_fasta_dict(Path(fasta_path))
+        fasta_seqs = _read_fasta_dict(Path(fasta_path))
     elif embedded_fasta:
-        genome_seqs = _parse_fasta_text(embedded_fasta)
+        fasta_seqs = _parse_fasta_text(embedded_fasta)
 
-    if not genome_seqs:
-        logger.warning("No genome sequences found. Need FASTA to translate CDS features.")
+    if not fasta_seqs:
+        logger.warning("No sequences found. Need FASTA to process CDS features.")
         return {}
 
-    # Extract CDS features and translate
+    # Detect whether FASTA contains protein or nucleotide sequences
+    is_protein = _is_protein_fasta(fasta_seqs)
+    if is_protein:
+        logger.info("Detected protein FASTA — using sequences directly (skipping translation)")
+        return _build_records_from_protein_fasta(
+            features, fasta_seqs, min_length, max_length, gff_path,
+        )
+
+    # Nucleotide FASTA — translate CDS features
     records = {}
     skipped_short = 0
     skipped_long = 0
@@ -73,7 +81,7 @@ def read_gff(
             continue
 
         contig = feat["seqid"]
-        genome_seq = genome_seqs.get(contig)
+        genome_seq = fasta_seqs.get(contig)
         if genome_seq is None:
             skipped_no_seq += 1
             continue
@@ -266,3 +274,110 @@ def _parse_fasta_text(text: str) -> dict[str, str]:
         sequences[current_id] = "".join(current_seq).upper()
 
     return sequences
+
+
+# Characters that only appear in amino acid sequences, never in nucleotide
+_PROTEIN_ONLY_CHARS = set("EFILPQZ")
+
+
+def _is_protein_fasta(seqs: dict[str, str]) -> bool:
+    """Detect whether sequences are protein (amino acid) or nucleotide.
+
+    Checks for amino acid-only characters (E, F, I, L, P, Q) that
+    cannot appear in nucleotide sequences (even with IUPAC ambiguity).
+
+    Args:
+        seqs: Dict of id→sequence
+
+    Returns:
+        True if sequences appear to be protein
+    """
+    for seq in seqs.values():
+        upper = seq.upper()
+        if _PROTEIN_ONLY_CHARS & set(upper):
+            return True
+    return False
+
+
+def _build_records_from_protein_fasta(
+    features: list[dict],
+    protein_seqs: dict[str, str],
+    min_length: int,
+    max_length: int | None,
+    gff_path: Path,
+) -> dict[str, ProteinRecord]:
+    """Build ProteinRecords by matching GFF features to protein sequences.
+
+    Prodigal protein FASTA IDs typically match the GFF feature IDs.
+    For each CDS feature, look up the protein sequence by ID and
+    attach genomic coordinates from the GFF.
+
+    Args:
+        features: Parsed GFF3 features
+        protein_seqs: Dict of protein_id→sequence from .faa file
+        min_length: Minimum protein length filter
+        max_length: Maximum protein length filter
+        gff_path: Path to GFF3 file (for logging)
+
+    Returns:
+        Dict mapping protein IDs to ProteinRecord objects
+    """
+    records = {}
+    skipped_short = 0
+    skipped_long = 0
+    matched = 0
+
+    for feat in features:
+        if feat["type"] != "CDS":
+            continue
+
+        contig = feat["seqid"]
+        protein_id = _get_gff_protein_id(feat, contig, len(records))
+
+        # Look up protein sequence by feature ID
+        protein_seq = protein_seqs.get(protein_id)
+        if protein_seq is None:
+            continue
+
+        # Strip trailing stop codon marker if present
+        protein_seq = protein_seq.rstrip("*")
+
+        if len(protein_seq) < min_length:
+            skipped_short += 1
+            continue
+        if max_length and len(protein_seq) > max_length:
+            skipped_long += 1
+            continue
+
+        product = feat["attributes"].get("product", "")
+        gene = feat["attributes"].get("gene", "")
+        name = feat["attributes"].get("Name", "")
+
+        source_annotations = {}
+        if product:
+            source_annotations["product"] = product
+        if gene:
+            source_annotations["gene"] = gene
+
+        description = product or name or gene or "hypothetical protein"
+
+        records[protein_id] = ProteinRecord(
+            id=protein_id,
+            sequence=protein_seq,
+            description=description,
+            contig=contig,
+            start=feat["start"],
+            end=feat["end"],
+            strand=feat["strand"],
+            source_annotations=source_annotations,
+        )
+        matched += 1
+
+    logger.info(f"Read {len(records)} proteins from {gff_path} (protein FASTA mode)")
+
+    if skipped_short > 0:
+        logger.warning(f"Skipped {skipped_short} proteins shorter than {min_length} aa")
+    if skipped_long > 0:
+        logger.warning(f"Skipped {skipped_long} proteins longer than {max_length} aa")
+
+    return records

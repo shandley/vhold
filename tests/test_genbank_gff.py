@@ -150,6 +150,133 @@ class TestReadGff:
         assert records == {}
 
 
+# ---- Test protein FASTA + GFF ----
+
+class TestReadGffProteinFasta:
+    """Tests for reading GFF3 with pre-translated protein FASTA (Prodigal .faa)."""
+
+    def test_protein_fasta_detected(self, tmp_path):
+        """Should detect protein FASTA and skip translation."""
+        gff = tmp_path / "test.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "contig_1\tProdigal\tCDS\t1\t300\t.\t+\t0\tID=prot_1;product=RNA polymerase\n"
+            "contig_1\tProdigal\tCDS\t400\t600\t.\t-\t0\tID=prot_2;product=coat protein\n"
+        )
+        faa = tmp_path / "test.faa"
+        faa.write_text(
+            ">prot_1\nMVLSPADKTNVKAAWGKVGAHAGEYGAEA\n"
+            ">prot_2\nMFLSFPTTKTYFPHFDLSH\n"
+        )
+        records = read_gff(gff, fasta_path=faa)
+        assert len(records) == 2
+        assert records["prot_1"].sequence == "MVLSPADKTNVKAAWGKVGAHAGEYGAEA"
+        assert records["prot_2"].sequence == "MFLSFPTTKTYFPHFDLSH"
+
+    def test_coordinates_from_gff(self, tmp_path):
+        """Should attach GFF coordinates to protein FASTA records."""
+        gff = tmp_path / "test.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "ctg1\tProdigal\tCDS\t100\t400\t.\t+\t0\tID=p1;product=polymerase\n"
+        )
+        faa = tmp_path / "test.faa"
+        faa.write_text(">p1\nMVLSPADKTNVKAAWGKVGAHAGEYGAEA\n")
+        records = read_gff(gff, fasta_path=faa)
+        rec = records["p1"]
+        assert rec.contig == "ctg1"
+        assert rec.start == 100
+        assert rec.end == 400
+        assert rec.strand == 1
+
+    def test_stop_codon_stripped(self, tmp_path):
+        """Should strip trailing * from protein sequences."""
+        gff = tmp_path / "test.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "c1\tProdigal\tCDS\t1\t300\t.\t+\t0\tID=p1\n"
+        )
+        faa = tmp_path / "test.faa"
+        faa.write_text(">p1\nMVLSPADKTNVKAAWGKV*\n")
+        records = read_gff(gff, fasta_path=faa)
+        assert records["p1"].sequence == "MVLSPADKTNVKAAWGKV"
+
+    def test_length_filters_apply(self, tmp_path):
+        """Should filter by min/max length in protein FASTA mode."""
+        gff = tmp_path / "test.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "c1\tProdigal\tCDS\t1\t300\t.\t+\t0\tID=short\n"
+            "c1\tProdigal\tCDS\t400\t700\t.\t+\t0\tID=ok\n"
+        )
+        faa = tmp_path / "test.faa"
+        faa.write_text(
+            ">short\nMVL\n"
+            ">ok\nMVLSPADKTNVKAAWGKVGAHAGEYGAEALERMFLSF\n"
+        )
+        records = read_gff(gff, fasta_path=faa, min_length=10)
+        assert "short" not in records
+        assert "ok" in records
+
+    def test_unmatched_ids_skipped(self, tmp_path):
+        """Should skip proteins with no matching GFF feature."""
+        gff = tmp_path / "test.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "c1\tProdigal\tCDS\t1\t300\t.\t+\t0\tID=p1\n"
+        )
+        faa = tmp_path / "test.faa"
+        faa.write_text(
+            ">p1\nMVLSPADKTNVKAAWGKVGAHAGEYGAEA\n"
+            ">p_extra\nMFLSFPTTKTYFPHFDLSH\n"
+        )
+        records = read_gff(gff, fasta_path=faa)
+        assert "p1" in records
+        assert "p_extra" not in records
+
+    def test_product_propagated(self, tmp_path):
+        """Should propagate product from GFF to record description."""
+        gff = tmp_path / "test.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "c1\tProdigal\tCDS\t1\t300\t.\t+\t0\tID=p1;product=RNA polymerase\n"
+        )
+        faa = tmp_path / "test.faa"
+        faa.write_text(">p1\nMVLSPADKTNVKAAWGKVGAHAGEYGAEA\n")
+        records = read_gff(gff, fasta_path=faa)
+        assert records["p1"].description == "RNA polymerase"
+        assert records["p1"].source_annotations["product"] == "RNA polymerase"
+
+
+# ---- Test _is_protein_fasta ----
+
+class TestIsProteinFasta:
+    """Tests for protein vs nucleotide FASTA detection."""
+
+    def test_protein_detected(self):
+        """Should detect amino acid sequences as protein."""
+        from vhold.io.gff import _is_protein_fasta
+        seqs = {"p1": "MVLSPADKTNVKAAWGKVGAHAGEYGAEA"}
+        assert _is_protein_fasta(seqs) is True
+
+    def test_nucleotide_detected(self):
+        """Should detect DNA sequences as nucleotide."""
+        from vhold.io.gff import _is_protein_fasta
+        seqs = {"n1": "ATGCGTACGATCGATCGATCG"}
+        assert _is_protein_fasta(seqs) is False
+
+    def test_ambiguous_nucleotide(self):
+        """Should detect IUPAC nucleotide as nucleotide."""
+        from vhold.io.gff import _is_protein_fasta
+        seqs = {"n1": "ATGCNNNRYSWKM"}
+        assert _is_protein_fasta(seqs) is False
+
+    def test_empty_returns_false(self):
+        """Should return False for empty dict."""
+        from vhold.io.gff import _is_protein_fasta
+        assert _is_protein_fasta({}) is False
+
+
 # ---- Test read_input auto-detection ----
 
 class TestReadInput:

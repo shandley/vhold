@@ -1,6 +1,6 @@
 # vHold Project State - Claude Code Context
 
-Last updated: 2026-02-16
+Last updated: 2026-02-14
 
 ## Project Overview
 
@@ -14,9 +14,11 @@ Last updated: 2026-02-16
 
 ```
 vHold Pipeline:
-1. Read FASTA sequences
+1. Read input (FASTA, GenBank, or GFF3) — auto-detected by extension
+   - GenBank/GFF: extracts proteins with genomic coordinates (contig, start, end, strand)
 1b. (Optional) Embedding triage: ProstT5 encoder cosine similarity against 436K references
     - LoRA adapter auto-loaded if installed (--lora/--no-lora)
+    - Alignment validation: rejects false positives with <15% sequence identity
     - Matched proteins: skip decoder, transfer annotation directly
     - Unmatched proteins: continue to step 2
 2. Predict 3Di with ProstT5 decoder (--fast for greedy, default beam search)
@@ -26,7 +28,8 @@ vHold Pipeline:
 4a. Merge triage results with structural search results
 4a.5. (Auto) MLP classifier: reclassify "unknown" proteins using trained embedding classifier
 4b. (Optional) LLM reclassification of unknown proteins (--llm-classify)
-5. Generate output: TSV, summary JSON, dark matter report
+4c. (Auto) Neighborhood voting: gene-order-based reclassification (GenBank/GFF input only)
+5. Generate output: TSV (with GO IDs), summary JSON, dark matter report
 ```
 
 ## Key Source Files
@@ -36,6 +39,7 @@ vHold Pipeline:
 | `src/vhold/features/prostt5.py` | 3Di prediction (ProstT5 model, MPS/CUDA/CPU), `get_predictor()` factory |
 | `src/vhold/features/embeddings.py` | Embedding triage (EmbeddingExtractor with LoRA auto-load, EmbeddingDatabase, triage_proteins) |
 | `src/vhold/features/contrastive.py` | Contrastive loss (SupConHardLoss, MultiGranularityLoss), CategoryBalancedSampler, ContrastiveDataset |
+| `src/vhold/features/alignment_validation.py` | Triage match validation via pairwise sequence alignment (BLOSUM62) |
 | `src/vhold/features/foldseek.py` | Structural search against BFVD/Viro3D + `create_query_db()` |
 | `src/vhold/features/foldmason.py` | FoldMason MSA wrapper (`run_foldmason_msa()`) |
 | `src/vhold/features/classifier.py` | MLP functional classifier (model definition + batch inference) |
@@ -50,8 +54,12 @@ vHold Pipeline:
 | `src/vhold/databases/lora.py` | LoRA adapter path management |
 | `src/vhold/results/annotations.py` | Consensus annotation transfer |
 | `src/vhold/results/categories.py` | Keyword-based functional classification |
+| `src/vhold/results/go_terms.py` | GO term ID resolution (name→ID from bundled OBO map) |
+| `src/vhold/results/neighborhood.py` | Neighborhood voting (gene-order-based classification) |
 | `src/vhold/results/llm_classify.py` | LLM-based functional classification (keywords + embedding unknowns) |
 | `src/vhold/utils/constants.py` | Thresholds, DB URLs, embedding config |
+| `src/vhold/io/genbank.py` | GenBank CDS feature extraction with coordinates |
+| `src/vhold/io/gff.py` | GFF3 parsing with embedded ##FASTA support |
 | `src/vhold/cli.py` | Click CLI (run, predict, compare, install, align, export-onnx) |
 | `scripts/train_contrastive.py` | Contrastive LoRA training (SupCon-Hard + multi-granularity) |
 | `scripts/evaluate_contrastive.py` | Before/after evaluation (MAP@k, NDCG, silhouette) |
@@ -59,7 +67,8 @@ vHold Pipeline:
 | `scripts/train_classifier.py` | MLP classifier training with stratified split + class weights |
 | `scripts/generate_llm_labels.py` | Batch LLM label generation for training data expansion |
 | `scripts/calibrate_triage_threshold.py` | Triage threshold calibration across 4 case studies |
-| `tests/` | 443 tests (pytest) |
+| `scripts/build_go_term_map.py` | Build GO term name→ID JSON from OBO file |
+| `tests/` | 528 tests (pytest) |
 
 ## Implemented Features
 
@@ -191,6 +200,50 @@ Optional ONNX INT8 backend for 3-6x CPU inference speedup. One-time export via `
 
 **Integration**: `get_predictor(backend="onnx")` returns `OnnxProstT5Predictor`. Triage and MLP classifier steps route to `OnnxEmbeddingExtractor` when backend is ONNX. Model reuse between triage and decoder is skipped for ONNX (separate model instances).
 
+### GenBank/GFF3 Input (`--input-format`) -- COMPLETE
+
+Accepts annotated genome files in addition to FASTA. Auto-detects format from file extension; override with `--input-format`. GenBank/GFF input preserves genomic coordinates for neighborhood voting.
+
+| Format | Extensions | Parser |
+|--------|-----------|--------|
+| FASTA | `.fasta`, `.fa`, `.faa` | BioPython SeqIO |
+| GenBank | `.gb`, `.gbk`, `.gbf`, `.genbank` | BioPython CDS extraction |
+| GFF3 | `.gff`, `.gff3` | Custom parser + nucleotide translation |
+
+- GenBank: extracts CDS features with `/translation` qualifiers, preserves product/gene/locus_tag
+- GFF3: supports embedded `##FASTA` (Prodigal output) or separate `--genome-fasta`
+- Position fields (`contig`, `start`, `end`, `strand`) added to `ProteinRecord` and `ConsensusResult`
+- Positions appear in TSV output when present
+
+### Alignment Validation of Triage Matches -- COMPLETE
+
+Validates embedding triage matches with lightweight pairwise sequence alignment. Rejects matches where cosine similarity is high but global sequence identity is below 15% (convergent structural similarity). Reference sequences read directly from installed Foldseek BFVD/Viro3D databases.
+
+- Uses BioPython PairwiseAligner + BLOSUM62 scoring
+- `FoldseekSequenceIndex` reads sequences from MMseqs2/Foldseek database format
+- Graceful degradation: skips validation if Foldseek DBs not installed
+- Default threshold: `DEFAULT_TRIAGE_MIN_IDENTITY = 0.15` (15% global sequence identity)
+
+### GO Term ID Propagation -- COMPLETE
+
+Resolves GO IDs (GO:0039694) from GO term names for downstream tool compatibility (TopGO, DRAM-v, anvi'o). Adds `go_bp_ids` and `go_mf_ids` columns to consensus TSV output.
+
+- Bundled `go_term_map.json` with 125K name→ID mappings (from Gene Ontology OBO + EXACT synonyms)
+- Handles BFVD format (inline `term [GO:ID]` — extracts IDs directly)
+- Handles Viro3D format (plain term names — looks up from map)
+- Wired into `get_bfvd_annotation()` and `get_viro3d_annotation()` return paths
+- Build script: `scripts/build_go_term_map.py --obo /path/to/go-basic.obo`
+
+### Neighborhood Voting (auto-activates with GenBank/GFF) -- COMPLETE
+
+Uses gene order to reclassify remaining unknown proteins when genomic positions are available. Runs as Step 4c after LLM classification, before output generation.
+
+- Distance + confidence weighted majority voting over ±5 nearest genes on same contig
+- Weight = `confidence_weight * (1 / (1 + rank_distance))`
+- Winner needs ≥2 votes and ≥50% of total weight
+- Cross-contig isolation: genes on different contigs do not vote for each other
+- No CLI flag needed — activates automatically when positions are available
+
 ### LLM Classification (`--llm-classify`)
 - Post-processing step using Claude to reclassify proteins where keywords return "unknown"
 - Targets `classification_source in ("keywords", "embedding")` AND `functional_category == "unknown"`
@@ -250,8 +303,7 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 - **Tests for triage + LLM + classifier integration**: End-to-end test with `--triage --classify --llm-classify`
 
 ### Medium-term
-- **Metagenomic pipeline integration**: Accept VirSorter2/VIBRANT/geNomad output, produce DRAM-v/anvi'o compatible annotations
-- **GenBank/GFF input with genomic neighborhood voting**: Use gene context for improved classification
+- **DRAM-v/anvi'o output formats**: Generate format-specific output files (now possible with GO IDs + positions)
 - **Iterative label refinement**: Use v3 classifier as filter for another round of LLM label agreement filtering
 - **Batch processing improvements**: Batch same-length sequences for ProstT5
 
@@ -267,6 +319,12 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 ```bash
 # Run vHold (auto-selects MPS on Apple Silicon, CUDA on Linux)
 uv run vhold run -i input.fasta -o output/ -t 8
+
+# GenBank input (auto-detected, preserves positions for neighborhood voting)
+uv run vhold run -i genome.gb -o output/ -t 8
+
+# GFF3 input with separate genome FASTA
+uv run vhold run -i genes.gff3 --genome-fasta genome.fna -o output/
 
 # With embedding triage (skip decoder for known proteins)
 uv run vhold run -i input.fasta -o output/ --triage

@@ -176,6 +176,10 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 - **LLM reclassification of triage unknowns**: Extended `--llm-classify` to reclassify embedding-matched proteins with "unknown" category. Claude Haiku correctly resolves accessory/regulatory proteins (e.g., SARS-CoV-2 ORF7a, ORF6, ORF3a → host_interaction). Improved precision from 77.6% to 83.5%.
 - **Contrastive LoRA fine-tuning code**: Complete implementation of SupCon-Hard + multi-granularity contrastive loss, CategoryBalancedSampler, LoRA integration into EmbeddingExtractor with `merge_and_unload()`. Training scripts, evaluation scripts, and embedding DB rebuild script all written and tested. **Training deferred** — MPS too slow (~60 sec/batch, 35+ hours for 1000 proteins). Needs CUDA GPU. Cost-benefit analysis: remaining triage precision errors are annotation quality issues (deleted UniProt entries), not embedding quality. Marginal improvement (~2-7% precision) doesn't justify compute on available hardware.
 - **Zenodo hosting for models and databases**: All supplementary files hosted on Zenodo record 18652045 (DOI: 10.5281/zenodo.18652045). Embedding DB (822 MB), enriched BFVD metadata (83 MB), and MLP classifier (2.6 MB) downloadable via `vhold install --embeddings --classifier` or `vhold install --all-models`. Enriched BFVD metadata auto-downloads with `vhold install --bfvd`.
+- **Alignment validation of triage matches**: Pairwise sequence alignment (BioPython BLOSUM62) validates embedding-matched proteins, rejecting false positives with <15% global identity. Reads reference sequences directly from installed Foldseek databases. Graceful degradation when databases not installed.
+- **GO term ID propagation**: Resolves GO IDs (GO:0039694 format) from term names using a bundled 125K-entry name→ID map generated from GO OBO file. Handles BFVD inline IDs and Viro3D plain names. Adds `go_bp_ids`, `go_mf_ids` columns to TSV output for TopGO/DRAM-v/anvi'o compatibility.
+- **GenBank/GFF3 input parsing**: Accepts GenBank (`.gb`/`.gbk`) and GFF3 (`.gff`/`.gff3`) files via `--input-format auto` (default). Extracts proteins with genomic coordinates (contig, start, end, strand). Auto-detects format by extension. FASTA input unchanged. New CLI options: `--input-format`, `--genome-fasta`.
+- **Neighborhood voting**: Gene-order-based reclassification of remaining unknowns using ±5 nearest genes on the same contig. Distance + confidence weighted majority voting. Auto-activates when positional data is present (GenBank/GFF input). Added as Step 4c in the pipeline.
 
 ## Updated Priority Ranking
 
@@ -186,6 +190,10 @@ Sequence-based phylogenetics breaks down for rapidly-evolving RNA viruses. Struc
 | -- | ~~Triage threshold calibration~~ | ~~High~~ | ~~Low~~ | **COMPLETE** — threshold 0.90, F1=0.910 |
 | -- | ~~Wire `--triage` end-to-end~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — `--triage` and `--llm-classify` working |
 | -- | ~~MLP functional classifier~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — macro F1 0.692, `--classify` in pipeline |
+| -- | ~~Alignment validation~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — BLOSUM62 pairwise, 15% identity threshold |
+| -- | ~~GO term ID propagation~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — 125K name→ID map, go_bp_ids/go_mf_ids in output |
+| -- | ~~GenBank/GFF input~~ | ~~High~~ | ~~Moderate~~ | **COMPLETE** — auto-detect, positions in output, `--input-format` |
+| -- | ~~Neighborhood voting~~ | ~~High~~ | ~~Low~~ | **COMPLETE** — Step 4c, ±5 genes, distance-weighted voting |
 | 2 | Metagenomic integration | High | High | **Next priority** |
 | -- | Iterative label refinement | Medium | Low | Use v3 as filter for another agreement round |
 | -- | Contrastive encoder fine-tuning | Medium | High | **Code complete, deferred** — needs CUDA GPU; marginal value at current precision |

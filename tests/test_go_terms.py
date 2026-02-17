@@ -154,3 +154,29 @@ class TestEnrichAnnotation:
         result = enrich_annotation_with_go_ids(annotation)
         assert result["go_bp_ids"] == "GO:0016032"
         assert result["go_mf_ids"] == "GO:0003723"
+
+    def test_adds_go_cc_ids(self):
+        """Should add go_cc_ids from go_cc."""
+        annotation = {
+            "go_cc": "host cell membrane [GO:0033644]",
+        }
+        result = enrich_annotation_with_go_ids(annotation)
+        assert result["go_cc_ids"] == "GO:0033644"
+
+    def test_adds_all_three_ontologies(self):
+        """Should add IDs for BP, MF, and CC simultaneously."""
+        annotation = {
+            "go_bp": "viral process [GO:0016032]",
+            "go_mf": "RNA binding [GO:0003723]",
+            "go_cc": "virion [GO:0019012]",
+        }
+        result = enrich_annotation_with_go_ids(annotation)
+        assert result["go_bp_ids"] == "GO:0016032"
+        assert result["go_mf_ids"] == "GO:0003723"
+        assert result["go_cc_ids"] == "GO:0019012"
+
+    def test_go_cc_plain_term(self):
+        """Should resolve plain GO CC term names."""
+        annotation = {"go_cc": "viral capsid"}
+        result = enrich_annotation_with_go_ids(annotation)
+        assert result["go_cc_ids"] == "GO:0019028"

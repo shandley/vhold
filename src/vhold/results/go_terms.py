@@ -82,26 +82,21 @@ def resolve_go_ids(go_terms_str: str) -> str:
 
 
 def enrich_annotation_with_go_ids(annotation: dict) -> dict:
-    """Add go_bp_ids and go_mf_ids fields from existing go_bp/go_mf.
+    """Add go_bp_ids, go_mf_ids, and go_cc_ids fields from existing GO terms.
 
     Modifies the annotation dict in-place and returns it.
 
     Args:
-        annotation: Annotation dict with optional go_bp and go_mf keys.
+        annotation: Annotation dict with optional go_bp, go_mf, go_cc keys.
 
     Returns:
-        The same dict with go_bp_ids and go_mf_ids added.
+        The same dict with go_bp_ids, go_mf_ids, and go_cc_ids added.
     """
-    go_bp = annotation.get("go_bp", "")
-    if go_bp:
-        ids = resolve_go_ids(go_bp)
-        if ids:
-            annotation["go_bp_ids"] = ids
-
-    go_mf = annotation.get("go_mf", "")
-    if go_mf:
-        ids = resolve_go_ids(go_mf)
-        if ids:
-            annotation["go_mf_ids"] = ids
+    for go_key, ids_key in [("go_bp", "go_bp_ids"), ("go_mf", "go_mf_ids"), ("go_cc", "go_cc_ids")]:
+        go_terms = annotation.get(go_key, "")
+        if go_terms:
+            ids = resolve_go_ids(go_terms)
+            if ids:
+                annotation[ids_key] = ids
 
     return annotation

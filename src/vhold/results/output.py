@@ -68,6 +68,8 @@ CONSENSUS_TSV_COLUMNS = [
     "go_bp_ids",
     "go_mf",
     "go_mf_ids",
+    "go_cc",
+    "go_cc_ids",
     "superfamily",
     "bfvd_hits",
     "viro3d_hits",
