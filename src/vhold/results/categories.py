@@ -103,6 +103,7 @@ FUNCTIONAL_CATEGORIES = {
         "viroporin",  # Ion channel proteins (influenza M2, CoV E, HCV p7)
         "immune modulator",  # Explicit immune modulation
         "ion channel protein",  # Viroporins described as ion channels
+        "v protein",  # Paramyxovirus V protein (IFN antagonist)
     ],
     "regulatory": [
         "transcription",
@@ -115,7 +116,7 @@ FUNCTIONAL_CATEGORIES = {
         "translation effector",  # e.g., Rotavirus NSP3
         "effector protein",  # General effector proteins
         "leader protein",  # Coronavirus nsp1/leader protein
-        "v protein",  # Paramyxovirus V protein (IFN antagonist / regulatory)
+        # "v protein" moved to host_interaction (IFN antagonist, not regulatory)
         "nonstructural protein",  # Generic nonstructural proteins (regulatory role)
         "non-structural protein",  # Hyphenated variant
         "transactivator",  # HBV X protein, HIV Tat
@@ -138,6 +139,13 @@ FUNCTIONAL_CATEGORIES = {
         "endolysin",
         "spanin",
         "lysis",
+    ],
+    "entry": [
+        "viral entry",
+        "cell entry",
+        "receptor binding",
+        "receptor-binding",
+        "entry protein",
     ],
 }
 

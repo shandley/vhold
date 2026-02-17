@@ -147,9 +147,9 @@ def align_pair(seq1: str, seq2: str) -> tuple[float, float]:
             if seq1[q_start + i] == seq2[t_start + i]:
                 matches += 1
 
-    # Identity as fraction of the longer sequence
-    total = max(len(seq1), len(seq2))
-    identity = matches / total if total > 0 else 0.0
+    # Identity as fraction of aligned positions
+    # Using aligned_length avoids penalizing short queries against long references
+    identity = matches / aligned_length if aligned_length > 0 else 0.0
 
     return identity, score
 

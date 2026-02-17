@@ -297,9 +297,9 @@ def run_pipeline(
         merged_results = merge_results(search_results, keep_best=False)
         logger.info(f"Total hits: {len(merged_results)}")
 
-        # Get best hits
-        best_results = merge_results(search_results, keep_best=True)
-        logger.info(f"Proteins with hits: {len(best_results)}")
+        # Count proteins with hits
+        proteins_with_hits = merged_results["query"].nunique() if len(merged_results) > 0 else 0
+        logger.info(f"Proteins with hits: {proteins_with_hits}")
         logger.info("")
 
         # ========================================

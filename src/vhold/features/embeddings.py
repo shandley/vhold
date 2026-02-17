@@ -511,7 +511,6 @@ def build_embedding_consensus_results(
             best_match.target_id,
             best_match.source_db,
             db_dir,
-            _metadata_cache={},
         )
 
         # Classify using all available evidence
@@ -569,7 +568,6 @@ def _lookup_annotation(
     target_id: str,
     source_db: str,
     db_dir: Path | None,
-    _metadata_cache: dict,
 ) -> dict:
     """Look up annotation for a reference protein.
 
@@ -577,7 +575,6 @@ def _lookup_annotation(
         target_id: Reference protein ID
         source_db: Database name ("bfvd" or "viro3d")
         db_dir: Database directory
-        _metadata_cache: Shared cache dict to avoid reloading metadata
 
     Returns:
         Annotation dict with description, gene, organism, etc.

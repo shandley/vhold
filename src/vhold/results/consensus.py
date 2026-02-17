@@ -547,11 +547,11 @@ def build_consensus(
             result.consensus_score = min(1.0, base_score * 1.15)
         else:
             # No bonus for disagreement
-            result.consensus_score = base_score
+            result.consensus_score = min(1.0, base_score)
     else:
         # Single database
         result.agreement = "single"
-        result.consensus_score = primary_scored.weighted_score
+        result.consensus_score = min(1.0, primary_scored.weighted_score)
 
     # Determine confidence level
     if result.consensus_score >= CONFIDENCE_THRESHOLDS["high"]:
