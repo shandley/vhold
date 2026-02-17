@@ -301,10 +301,10 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     help="Use greedy decoding (~3x faster, may reduce sensitivity for remote homologs)",
 )
 @click.option(
-    "--llm-classify",
-    is_flag=True,
-    default=False,
-    help="Use LLM to classify unknown proteins (requires: pip install vhold[llm])",
+    "--llm/--no-llm",
+    "llm_classify",
+    default=None,
+    help="Use LLM to classify unknown proteins (auto-enabled when ANTHROPIC_API_KEY is set)",
 )
 @click.option(
     "--llm-model",
@@ -380,6 +380,17 @@ def run(
 
         vhold run -i genes.gff3 --genome-fasta genome.fna -o results/
     """
+    import os
+
+    # Auto-detect LLM availability when user didn't specify --llm/--no-llm
+    if llm_classify is None:
+        llm_classify = bool(os.environ.get("ANTHROPIC_API_KEY"))
+        if llm_classify:
+            click.echo(
+                "LLM classification auto-enabled (ANTHROPIC_API_KEY detected). "
+                "Use --no-llm to disable."
+            )
+
     from vhold.subcommands.run import run_pipeline
     run_pipeline(
         input_file=input_file,

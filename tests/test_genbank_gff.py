@@ -358,3 +358,88 @@ class TestProteinRecordPosition:
             source_annotations={"product": "polymerase", "gene": "pol"},
         )
         assert rec.source_annotations["product"] == "polymerase"
+
+
+# ---- Prodigal GFF+FAA workflow validation ----
+
+class TestProdigalWorkflow:
+    """Validate the full Prodigal GFF+FAA workflow with realistic output.
+
+    Tests use actual Prodigal output format (GFF3 + protein FASTA) from
+    tests/test_data/prodigal_output.{gff,faa}.
+    """
+
+    PRODIGAL_GFF = TEST_DATA / "prodigal_output.gff"
+    PRODIGAL_FAA = TEST_DATA / "prodigal_output.faa"
+
+    def test_all_proteins_parsed(self):
+        """Should parse all 7 CDS features from Prodigal output."""
+        records = read_gff(self.PRODIGAL_GFF, fasta_path=self.PRODIGAL_FAA)
+        assert len(records) == 7
+
+    def test_ids_match_between_gff_and_faa(self):
+        """GFF feature IDs should match FAA sequence IDs."""
+        records = read_gff(self.PRODIGAL_GFF, fasta_path=self.PRODIGAL_FAA)
+        expected_ids = [f"lambda_test_{i}" for i in range(1, 8)]
+        for eid in expected_ids:
+            assert eid in records, f"Missing protein: {eid}"
+
+    def test_sequences_are_protein(self):
+        """Should extract protein sequences (not nucleotide)."""
+        records = read_gff(self.PRODIGAL_GFF, fasta_path=self.PRODIGAL_FAA)
+        for pid, rec in records.items():
+            assert rec.sequence[0] == "M", f"{pid} should start with M"
+            assert len(rec.sequence) > 20, f"{pid} too short: {len(rec.sequence)}"
+            # Should contain protein-only characters
+            has_protein_chars = any(c in rec.sequence for c in "EFILPQ")
+            assert has_protein_chars, f"{pid} doesn't look like protein"
+
+    def test_coordinates_from_gff(self):
+        """Genomic coordinates should come from GFF, not FASTA."""
+        records = read_gff(self.PRODIGAL_GFF, fasta_path=self.PRODIGAL_FAA)
+        # lambda_test_1: CDS 3..302 +
+        p1 = records["lambda_test_1"]
+        assert p1.contig == "lambda_test"
+        assert p1.start == 3
+        assert p1.end == 302
+        assert p1.strand == 1
+
+    def test_reverse_strand_coordinates(self):
+        """Reverse strand CDS should have correct strand."""
+        records = read_gff(self.PRODIGAL_GFF, fasta_path=self.PRODIGAL_FAA)
+        # lambda_test_5: CDS 1795..2598 -
+        p5 = records["lambda_test_5"]
+        assert p5.strand == -1
+        assert p5.start == 1795
+        assert p5.end == 2598
+
+    def test_prodigal_faa_header_parsing(self):
+        """Should handle Prodigal's extended FASTA headers correctly.
+
+        Prodigal FAA headers: >ID # start # end # strand # attrs
+        The ID is extracted from before the first space/comment marker.
+        """
+        records = read_gff(self.PRODIGAL_GFF, fasta_path=self.PRODIGAL_FAA)
+        # All IDs should be clean (no Prodigal metadata leaking into ID)
+        for pid in records:
+            assert "#" not in pid, f"ID '{pid}' contains Prodigal header metadata"
+            assert " " not in pid, f"ID '{pid}' contains spaces"
+
+    def test_read_input_auto_detects_gff_with_faa(self):
+        """read_input should work with GFF+FAA via explicit fasta_path."""
+        records = read_input(
+            self.PRODIGAL_GFF,
+            fasta_path=str(self.PRODIGAL_FAA),
+        )
+        assert len(records) == 7
+        # Should have positions
+        first = records["lambda_test_1"]
+        assert first.contig is not None
+
+    def test_no_stop_codon_in_sequences(self):
+        """Trailing stop codons should be stripped from protein sequences."""
+        records = read_gff(self.PRODIGAL_GFF, fasta_path=self.PRODIGAL_FAA)
+        for pid, rec in records.items():
+            assert not rec.sequence.endswith("*"), (
+                f"{pid} has trailing stop codon"
+            )

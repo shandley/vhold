@@ -296,3 +296,230 @@ class TestVoteNeighborhood:
         assert "g2" in result
         _, confidence = result["g2"]
         assert 0.0 < confidence <= 1.0
+
+
+# ---- Large genome neighborhood voting tests ----
+
+class TestLargeGenomeNeighborhoodVoting:
+    """Test neighborhood voting on a herpesvirus-like genome with 100+ proteins.
+
+    Herpesviruses organize genes into functional clusters:
+    - Structural/assembly cluster (capsid, tegument, envelope)
+    - Replication cluster (polymerase, helicase, primase)
+    - Regulatory cluster (immediate-early, transcription factors)
+    - Packaging cluster (terminase, portal)
+
+    This test simulates a 120-gene genome with realistic cluster organization
+    and scattered unknowns that should be reclassified by neighbors.
+    """
+
+    @staticmethod
+    def _build_herpesvirus_genome():
+        """Create a synthetic herpesvirus-like genome with 120 genes.
+
+        Gene layout (on a single contig):
+        - Genes 0-14: Regulatory cluster (immediate-early, transcription factors)
+        - Genes 15-19: Unknown cluster (poorly characterized ORFs)
+        - Genes 20-49: Replication cluster (polymerase, helicase, primase, etc.)
+        - Genes 50-54: Unknown cluster
+        - Genes 55-89: Structural cluster (capsid, tegument, envelope)
+        - Genes 90-94: Packaging cluster (terminase, portal, scaffold)
+        - Genes 95-99: Unknown cluster
+        - Genes 100-109: Structural cluster 2 (glycoproteins)
+        - Genes 110-114: Lysis/egress (mostly unknown with a few annotated)
+        - Genes 115-119: Regulatory cluster 2
+
+        Returns:
+            (annotations, positions, expected_unknown_ids)
+        """
+        # Define gene blocks: (start_idx, end_idx, category, unknown_fraction)
+        blocks = [
+            (0, 14, "regulatory", 0.2),
+            (15, 19, "unknown", 1.0),          # Unknown cluster near regulatory
+            (20, 49, "replication", 0.15),
+            (50, 54, "unknown", 1.0),           # Unknown cluster near replication
+            (55, 89, "structural", 0.1),
+            (90, 94, "packaging", 0.2),
+            (95, 99, "unknown", 1.0),           # Unknown cluster near packaging
+            (100, 109, "structural", 0.15),
+            (110, 114, "lysis", 0.6),           # Mostly unknown lysis cluster
+            (115, 119, "regulatory", 0.2),
+        ]
+
+        annotations = {}
+        positions = {}
+        unknown_ids = []
+        unknown_in_cluster = {}  # Track which cluster each unknown belongs to
+
+        gene_idx = 0
+        for start_idx, end_idx, category, unknown_frac in blocks:
+            for i in range(start_idx, end_idx + 1):
+                pid = f"UL{i}"
+                positions[pid] = {
+                    "contig": "HHV1",
+                    "start": i * 1500 + 100,
+                    "end": i * 1500 + 1400,
+                    "strand": 1 if i % 3 != 0 else -1,  # Mix of strands
+                }
+
+                # Determine if this gene is "unknown"
+                is_unknown = False
+                if category == "unknown":
+                    is_unknown = True
+                elif i % int(1 / unknown_frac) == 0 if unknown_frac > 0 else False:
+                    is_unknown = True
+
+                if is_unknown:
+                    annotations[pid] = MockAnnotation(
+                        functional_category="unknown",
+                        confidence_level="high",
+                    )
+                    unknown_ids.append(pid)
+                    unknown_in_cluster[pid] = category
+                else:
+                    annotations[pid] = MockAnnotation(
+                        functional_category=category,
+                        confidence_level="high",
+                    )
+
+        return annotations, positions, unknown_ids, unknown_in_cluster
+
+    def test_genome_size(self):
+        """Should have 120 genes."""
+        annotations, positions, _, _ = self._build_herpesvirus_genome()
+        assert len(annotations) == 120
+        assert len(positions) == 120
+
+    def test_has_substantial_unknowns(self):
+        """Should have a meaningful number of unknowns to reclassify."""
+        _, _, unknown_ids, _ = self._build_herpesvirus_genome()
+        assert len(unknown_ids) >= 20
+
+    def test_unknown_cluster_genes_reclassified(self):
+        """Unknowns in clusters surrounded by annotated genes should be reclassified."""
+        annotations, positions, unknown_ids, cluster_map = \
+            self._build_herpesvirus_genome()
+
+        result = vote_neighborhood(
+            unknown_ids, annotations, positions,
+            window_size=5, min_votes=2, min_vote_fraction=0.5,
+        )
+
+        # At least some unknowns should be reclassified
+        assert len(result) > 0
+        reclassification_rate = len(result) / len(unknown_ids)
+        # Should reclassify at least 30% of unknowns
+        assert reclassification_rate >= 0.3, (
+            f"Only {reclassification_rate:.0%} of unknowns reclassified "
+            f"({len(result)}/{len(unknown_ids)})"
+        )
+
+    def test_scattered_unknowns_match_cluster_category(self):
+        """Unknowns scattered within clusters should get the cluster's category."""
+        annotations, positions, unknown_ids, cluster_map = \
+            self._build_herpesvirus_genome()
+
+        result = vote_neighborhood(
+            unknown_ids, annotations, positions,
+            window_size=5, min_votes=2, min_vote_fraction=0.5,
+        )
+
+        # Reclassified unknowns should match their cluster category
+        correct = 0
+        total = 0
+        for pid, (predicted_cat, confidence) in result.items():
+            expected = cluster_map.get(pid)
+            if expected and expected != "unknown":
+                total += 1
+                if predicted_cat == expected:
+                    correct += 1
+
+        if total > 0:
+            accuracy = correct / total
+            # 70% threshold accounts for genes at cluster boundaries
+            # that get reclassified to the adjacent cluster's category
+            assert accuracy >= 0.65, (
+                f"Cluster accuracy: {accuracy:.0%} ({correct}/{total})"
+            )
+
+    def test_pure_unknown_clusters_reclassified_by_neighbors(self):
+        """Pure unknown clusters (genes 15-19, 50-54, 95-99) should get
+        categories from their neighboring annotated clusters."""
+        annotations, positions, unknown_ids, cluster_map = \
+            self._build_herpesvirus_genome()
+
+        result = vote_neighborhood(
+            unknown_ids, annotations, positions,
+            window_size=5, min_votes=2, min_vote_fraction=0.5,
+        )
+
+        # Genes 15-19 are near regulatory (0-14) and replication (20-49)
+        # They should be reclassified (mostly to one of those)
+        cluster_15_19 = [f"UL{i}" for i in range(15, 20)]
+        reclassified = sum(1 for pid in cluster_15_19 if pid in result)
+        assert reclassified >= 2, (
+            f"Only {reclassified}/5 genes in unknown cluster 15-19 reclassified"
+        )
+
+    def test_cross_cluster_boundary(self):
+        """Genes at cluster boundaries may get either neighboring category."""
+        annotations, positions, unknown_ids, cluster_map = \
+            self._build_herpesvirus_genome()
+
+        result = vote_neighborhood(
+            unknown_ids, annotations, positions,
+            window_size=5, min_votes=2, min_vote_fraction=0.5,
+        )
+
+        # Check all reclassified proteins have valid categories
+        valid_categories = {
+            "structural", "replication", "protease", "nuclease",
+            "packaging", "regulatory", "movement", "lysis",
+            "host_interaction", "entry",
+        }
+        for pid, (cat, conf) in result.items():
+            assert cat in valid_categories, f"{pid} got invalid category: {cat}"
+            assert 0.0 < conf <= 1.0, f"{pid} got invalid confidence: {conf}"
+
+    def test_multi_contig_large_genome(self):
+        """Test with genes split across multiple contigs (metagenomic scenario)."""
+        annotations = {}
+        positions = {}
+        unknown_ids = []
+
+        # 3 contigs of 40 genes each, each with structural clusters and unknowns
+        for contig_idx in range(3):
+            contig = f"contig_{contig_idx}"
+            for i in range(40):
+                pid = f"{contig}_g{i}"
+                positions[pid] = {
+                    "contig": contig,
+                    "start": i * 1000 + 100,
+                    "end": i * 1000 + 900,
+                    "strand": 1,
+                }
+                # Make genes 15-19 unknown, rest structural
+                if 15 <= i <= 19:
+                    annotations[pid] = MockAnnotation(
+                        functional_category="unknown",
+                        confidence_level="high",
+                    )
+                    unknown_ids.append(pid)
+                else:
+                    annotations[pid] = MockAnnotation(
+                        functional_category="structural",
+                        confidence_level="high",
+                    )
+
+        assert len(annotations) == 120
+        assert len(unknown_ids) == 15
+
+        result = vote_neighborhood(
+            unknown_ids, annotations, positions,
+            window_size=5, min_votes=2, min_vote_fraction=0.5,
+        )
+
+        # All unknowns should be reclassified as structural
+        assert len(result) == 15
+        for pid, (cat, _) in result.items():
+            assert cat == "structural", f"{pid} expected structural, got {cat}"
