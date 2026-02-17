@@ -80,6 +80,21 @@ class TestClassifyProteinStructural:
         ("nucleocapsid protein N", "structural"),
         ("tegument protein", "structural"),
         ("baseplate protein", "structural"),
+        # New: surface, core, and other virus family proteins
+        ("surface protein", "structural"),
+        ("middle surface protein", "structural"),
+        ("surface antigen", "structural"),
+        ("surface glycoprotein", "structural"),
+        ("core protein", "structural"),
+        ("Core antigen HBcAG (aa 1-183)", "structural"),
+        # "structural protein" omitted — conflicts with "non-structural protein" substring
+        ("outer capsid protein VP4", "structural"),
+        ("inner capsid protein VP2", "structural"),
+        ("hemagglutinin", "structural"),
+        ("neuraminidase", "structural"),
+        ("gag polyprotein", "structural"),
+        ("gag-pro-pol polyprotein", "structural"),
+        ("pre-membrane protein prM", "structural"),
     ])
     def test_structural_keywords(self, description, expected):
         """Structural keywords should classify correctly."""
@@ -165,6 +180,12 @@ class TestClassifyProteinRegulatory:
         ("gene regulator", "regulatory"),
         ("anti-repressor", "regulatory"),
         ("antirepressor protein", "regulatory"),
+        # New: transactivator, immediate-early, methyltransferase
+        ("transactivator protein", "regulatory"),
+        ("trans-activating protein", "regulatory"),
+        ("immediate-early protein ICP4", "regulatory"),
+        ("2'-O-ribose methyltransferase", "regulatory"),
+        ("non-structural protein 6", "regulatory"),
     ])
     def test_regulatory_keywords(self, description, expected):
         """Regulatory keywords should classify correctly."""
@@ -196,6 +217,23 @@ class TestClassifyProteinLysis:
     ])
     def test_lysis_keywords(self, description, expected):
         """Lysis keywords should classify correctly."""
+        assert classify_protein(description) == expected
+
+
+class TestClassifyProteinHostInteraction:
+    """Tests for host interaction protein classification."""
+
+    @pytest.mark.parametrize("description,expected", [
+        ("interferon antagonist", "host_interaction"),
+        ("immune evasion protein", "host_interaction"),
+        ("interferon inhibitor", "host_interaction"),
+        ("accessory protein", "host_interaction"),
+        ("viroporin", "host_interaction"),
+        ("immune modulator", "host_interaction"),
+        ("ion channel protein", "host_interaction"),
+    ])
+    def test_host_interaction_keywords(self, description, expected):
+        """Host interaction keywords should classify correctly."""
         assert classify_protein(description) == expected
 
 
@@ -295,3 +333,51 @@ class TestClassifyProteinEdgeCases:
         """Very long descriptions should work."""
         long_desc = "putative " * 100 + "capsid protein"
         assert classify_protein(long_desc) == "structural"
+
+
+class TestClassifyHBVProteins:
+    """Regression tests for HBV proteins that were previously unknown."""
+
+    def test_polymerase(self):
+        assert classify_protein("polymerase") == "replication"
+
+    def test_surface_protein(self):
+        assert classify_protein("surface protein") == "structural"
+
+    def test_middle_surface_protein(self):
+        assert classify_protein("middle surface protein") == "structural"
+
+    def test_surface_antigen(self):
+        assert classify_protein("surface antigen") == "structural"
+
+    def test_core_antigen(self):
+        assert classify_protein("Core antigen HBcAG (aa 1-183)") == "structural"
+
+
+class TestClassifyVirusFamilyProteins:
+    """Tests for keyword coverage across major virus families."""
+
+    @pytest.mark.parametrize("description,expected", [
+        # Influenza
+        ("hemagglutinin", "structural"),
+        ("neuraminidase", "structural"),
+        # Retroviridae
+        ("gag polyprotein", "structural"),
+        # Flaviviridae
+        ("pre-membrane protein", "structural"),
+        ("core protein", "structural"),
+        # Rotavirus
+        ("outer capsid protein VP7", "structural"),
+        # Herpesviridae
+        ("immediate-early protein ICP0", "regulatory"),
+        # Paramyxoviridae (existing keywords)
+        ("fusion protein", "structural"),
+        ("attachment glycoprotein", "structural"),
+        ("phosphoprotein P", "replication"),
+        # Host interaction (cross-family)
+        ("accessory protein ORF3a", "host_interaction"),
+        ("viroporin", "host_interaction"),
+    ])
+    def test_virus_family_proteins(self, description, expected):
+        """Common viral proteins across families should classify correctly."""
+        assert classify_protein(description) == expected

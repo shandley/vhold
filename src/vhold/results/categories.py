@@ -41,6 +41,19 @@ FUNCTIONAL_CATEGORIES = {
         "fusion",  # Bare "fusion" from Viro3D (always means fusion protein in viral context)
         "attachment",  # Attachment glycoproteins (e.g., Nipah G, HN proteins)
         "structural polyprotein",  # Alphavirus structural polyprotein
+        "surface protein",  # HBV surface proteins, rotavirus VP7
+        "surface antigen",  # HBV HBsAg
+        "surface glycoprotein",  # Paramyxovirus, coronavirus surface glycoproteins
+        "core protein",  # HBV core, HCV core, flavivirus capsid/core
+        "core antigen",  # HBV HBcAg
+        # Note: "structural protein" omitted — conflicts with "non-structural protein"
+        "outer capsid",  # Rotavirus VP4/VP7
+        "inner capsid",  # Rotavirus VP2
+        "hemagglutinin",  # Influenza HA (virion surface glycoprotein)
+        "neuraminidase",  # Influenza NA (virion surface enzyme)
+        "gag polyprotein",  # Retroviral structural polyprotein (MA+CA+NC)
+        "gag-pro-pol",  # Retroviral polyprotein precursor
+        "pre-membrane",  # Flavivirus prM structural precursor
     ],
     "replication": [
         "polymerase",
@@ -86,6 +99,10 @@ FUNCTIONAL_CATEGORIES = {
         "immune antagonist",  # Immune system antagonism
         "interferon inhibitor",  # IFN signaling inhibitors
         "innate immune",  # Innate immunity modulators
+        "accessory protein",  # SARS-CoV-2 ORFs, HIV Vif/Vpr/Vpu
+        "viroporin",  # Ion channel proteins (influenza M2, CoV E, HCV p7)
+        "immune modulator",  # Explicit immune modulation
+        "ion channel protein",  # Viroporins described as ion channels
     ],
     "regulatory": [
         "transcription",
@@ -100,6 +117,11 @@ FUNCTIONAL_CATEGORIES = {
         "leader protein",  # Coronavirus nsp1/leader protein
         "v protein",  # Paramyxovirus V protein (IFN antagonist / regulatory)
         "nonstructural protein",  # Generic nonstructural proteins (regulatory role)
+        "non-structural protein",  # Hyphenated variant
+        "transactivator",  # HBV X protein, HIV Tat
+        "trans-activating",  # Variant spelling of transactivator
+        "immediate-early",  # Herpesvirus IE regulatory proteins
+        "methyltransferase",  # Cap/SAM methyltransferases (NSP14/16, regulatory)
     ],
     "movement": [
         "movement",
@@ -173,6 +195,16 @@ PFAM_TO_CATEGORY = {
         "fusion glycoprotein",  # Viral fusion glycoproteins
         "attachment protein",  # HN, H, G attachment glycoproteins
         "coronavirus m matrix",  # Coronavirus membrane/matrix protein
+        "surface protein",  # Viral surface proteins
+        "surface antigen",  # HBV HBsAg
+        "surface glycoprotein",  # Viral surface glycoproteins
+        "core protein",  # HBV/HCV/flavivirus core
+        "hemagglutinin",  # Influenza HA
+        "neuraminidase",  # Influenza NA
+        "gag polyprotein",  # Retroviral structural
+        "pre-membrane protein",  # Flavivirus prM
+        "outer capsid protein",  # Rotavirus VP4/VP7
+        "inner capsid protein",  # Rotavirus VP2
     ],
     # Replication machinery
     "replication": [
@@ -261,12 +293,15 @@ PFAM_TO_CATEGORY = {
         "regulator",
         "anti-repressor",
         "trans-activator",
+        "transactivator",
         "immediate-early",
         "protein kinase",
         "kinase domain",
         "translation enhancer",
         "translation effector",
         "translation regulation",
+        "methyltransferase",
+        "cap methyltransferase",
     ],
     # Host interaction / immune evasion
     "host_interaction": [
@@ -277,6 +312,9 @@ PFAM_TO_CATEGORY = {
         "innate immune",
         "stat inhibitor",
         "nf-kappa-b inhibitor",
+        "accessory protein",
+        "viroporin",
+        "immune modulator",
     ],
     # Movement (plant viruses)
     "movement": [
@@ -353,6 +391,9 @@ GO_BP_TO_CATEGORY = {
         "modulation by virus of host process",
         "immune response",
         "immune evasion",
+        "modulation by virus of host immune response",
+        "suppression by virus of host immune response",
+        "evasion of host immune response",
     ],
     "entry": [
         "fusion of virus membrane with host plasma membrane",
@@ -458,6 +499,7 @@ SUPERFAMILY_TO_CATEGORY = {
     ],
     "host_interaction": [
         "bcl-2 inhibitors of programmed cell death",
+        "viroporin",
     ],
 }
 
