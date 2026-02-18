@@ -104,6 +104,17 @@ FUNCTIONAL_CATEGORIES = {
         "immune modulator",  # Explicit immune modulation
         "ion channel protein",  # Viroporins described as ion channels
         "v protein",  # Paramyxovirus V protein (IFN antagonist)
+        # Phage anti-host defense keywords
+        "anti-restriction",  # T7 Ocr, anti-restriction proteins
+        "anti-crispr",  # CRISPR defense inhibitors
+        "anti-defense",  # General anti-defense proteins
+        "host shutoff",  # Host gene expression shutoff
+        "host defense",  # Host defense modulators
+        "host division inhibitor",  # T7 gp0.4 (FtsZ inhibitor)
+        "host cell division inhibitor",  # Variant phrasing
+        "host takeover",  # Host takeover functions
+        "ocr",  # T7 anti-restriction protein Ocr
+        "dgtpase inhibitor",  # T7 gp1.2
     ],
     "regulatory": [
         "transcription",
@@ -323,6 +334,12 @@ PFAM_TO_CATEGORY = {
         "accessory protein",
         "viroporin",
         "immune modulator",
+        # Phage anti-host defense (Pfam level)
+        "anti-restriction",
+        "anti-crispr",
+        "anti-defense",
+        "host defense inhibitor",
+        "host nuclease inhibitor",
     ],
     # Movement (plant viruses)
     "movement": [
@@ -428,6 +445,9 @@ GO_MF_TO_CATEGORY = {
     "replication": [
         "dna-directed 5'-3' rna polymerase activity",
         "rna-dependent rna polymerase activity",
+        "dna-directed dna polymerase activity",
+        "dna polymerase activity",
+        "dna-directed 5'-3' dna polymerase activity",
         "dna helicase activity",
         "rna helicase activity",
         "dna primase activity",
@@ -435,6 +455,8 @@ GO_MF_TO_CATEGORY = {
         "nucleotide binding",
         "atp binding",
         "atp hydrolysis activity",
+        "single-stranded dna binding",
+        "kinase activity",
     ],
     "protease": [
         "serine-type endopeptidase activity",
@@ -624,6 +646,44 @@ def classify_by_superfamily(superfamily: str) -> Optional[str]:
     return None
 
 
+def _is_inhibitor_context(text: str, keyword: str) -> bool:
+    """Check if a keyword match occurs in an inhibitor/antagonist context.
+
+    Detects patterns like "polymerase inhibitor", "nuclease inhibitor",
+    where the keyword describes the *target* being inhibited, not the
+    function of the protein itself.
+
+    Only triggers for "host" context or explicit "inhibitor" suffixes.
+    Does NOT trigger for viral regulatory terms like "anti-repressor"
+    which are standard viral gene regulation.
+
+    Args:
+        text: Lowercased full description text
+        keyword: The matched keyword
+
+    Returns:
+        True if the keyword appears in an inhibitor context
+    """
+    # Find the keyword position
+    idx = text.find(keyword)
+    if idx < 0:
+        return False
+
+    # Check for inhibitor-class words after the keyword (within 30 chars)
+    after = text[idx + len(keyword):idx + len(keyword) + 30]
+    inhibitor_terms = ["inhibitor", "inhibition"]
+    for term in inhibitor_terms:
+        if term in after:
+            return True
+
+    # Check for "host" context before the keyword — e.g., "host nuclease"
+    before = text[max(0, idx - 15):idx]
+    if "host" in before:
+        return True
+
+    return False
+
+
 def classify_by_keywords(description: str, gene: str | None = None) -> str:
     """Classify protein by keyword matching (original approach).
 
@@ -639,6 +699,11 @@ def classify_by_keywords(description: str, gene: str | None = None) -> str:
     for category, keywords in FUNCTIONAL_CATEGORIES.items():
         for keyword in keywords:
             if keyword in text:
+                # Check for inhibitor context — proteins that inhibit
+                # a function (e.g., "nuclease inhibitor") should be
+                # classified as host_interaction, not the inhibited function
+                if category != "host_interaction" and _is_inhibitor_context(text, keyword):
+                    return "host_interaction"
                 return category
 
     for term in UNKNOWN_TERMS:

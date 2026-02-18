@@ -265,7 +265,7 @@ ORIGIN
              patch("vhold.features.embeddings.triage_proteins",
                    return_value=(triage_result, mock_extractor)), \
              patch("vhold.features.embeddings.build_embedding_consensus_results",
-                   return_value=triage_consensus):
+                   return_value=(triage_consensus, [])):
 
             from vhold.subcommands.run import run_pipeline
             run_pipeline(
@@ -569,7 +569,7 @@ class TestCombinedTriageClassifyLLM:
              patch("vhold.features.embeddings.triage_proteins",
                    return_value=(triage_result, mock_extractor)), \
              patch("vhold.features.embeddings.build_embedding_consensus_results",
-                   return_value=triage_consensus), \
+                   return_value=(triage_consensus, [])), \
              patch("vhold.databases.classifier.check_classifier_model",
                    return_value=True), \
              patch("vhold.features.classifier.load_classifier",
@@ -700,7 +700,7 @@ class TestCombinedTriageClassifyLLM:
              patch("vhold.features.embeddings.triage_proteins",
                    return_value=(triage_result, mock_extractor)), \
              patch("vhold.features.embeddings.build_embedding_consensus_results",
-                   return_value=triage_consensus), \
+                   return_value=(triage_consensus, [])), \
              patch("vhold.results.llm_classify.llm_reclassify") as mock_llm:
 
             mock_llm.side_effect = lambda annotations, model=None: annotations

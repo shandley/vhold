@@ -195,11 +195,14 @@ def run_pipeline(
 
             # Build ConsensusResults for matched proteins
             if triage_result.matched:
-                triage_annotations = build_embedding_consensus_results(
+                triage_annotations, deleted_ids = build_embedding_consensus_results(
                     matches=triage_result.matched,
                     query_lengths=seq_lengths,
                     db_dir=db_dir,
                 )
+                # Route proteins with deleted/empty annotations to full pipeline
+                if deleted_ids:
+                    triage_result.unmatched.extend(deleted_ids)
 
             # Only run decoder on unmatched proteins
             sequences_for_decoder = {

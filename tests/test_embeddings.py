@@ -456,12 +456,13 @@ class TestBuildEmbeddingConsensusResults:
             "vhold.features.embeddings._lookup_annotation",
             return_value={"description": "matrix protein", "gene": "M"},
         ):
-            results = build_embedding_consensus_results(
+            results, skipped = build_embedding_consensus_results(
                 matches=matches,
                 query_lengths={"query_1": 300},
             )
 
         assert "query_1" in results
+        assert skipped == []
         r = results["query_1"]
         assert r.primary_source == "embedding_viro3d"
         assert r.novelty == "embedding_match"
@@ -486,7 +487,7 @@ class TestBuildEmbeddingConsensusResults:
             "vhold.features.embeddings._lookup_annotation",
             return_value={"description": "capsid protein"},
         ):
-            results = build_embedding_consensus_results(
+            results, skipped = build_embedding_consensus_results(
                 matches=matches,
                 query_lengths={"q1": 250},
             )
@@ -512,7 +513,7 @@ class TestBuildEmbeddingConsensusResults:
             "vhold.features.embeddings._lookup_annotation",
             return_value={"description": "spike protein"},
         ):
-            results = build_embedding_consensus_results(
+            results, skipped = build_embedding_consensus_results(
                 matches=matches,
                 query_lengths={"q1": 1000},
             )

@@ -469,6 +469,33 @@ def triage_proteins(
 # ============================================================================
 
 
+def _is_deleted_annotation(annotation: dict) -> bool:
+    """Check if an annotation comes from a deleted UniProt entry.
+
+    Deleted entries have no useful metadata — transferring them produces
+    misleading results. These proteins should fall through to the full
+    Foldseek pipeline instead.
+
+    Args:
+        annotation: Annotation dict from _lookup_annotation
+
+    Returns:
+        True if the annotation is from a deleted/empty entry
+    """
+    description = annotation.get("description", "")
+    desc_lower = description.lower().strip()
+
+    # Explicit "deleted" flag from UniProt
+    if desc_lower == "deleted":
+        return True
+
+    # Empty or bare accession-only descriptions
+    if not desc_lower or desc_lower.startswith("unipr"):
+        return True
+
+    return False
+
+
 def build_embedding_consensus_results(
     matches: dict[str, list[EmbeddingMatch]],
     query_lengths: dict[str, int],
@@ -480,13 +507,19 @@ def build_embedding_consensus_results(
     transfers annotation, building a ConsensusResult with embedding-specific
     provenance fields.
 
+    Proteins matched to deleted UniProt entries (no useful annotation)
+    are skipped — they will be returned in the ``skipped_ids`` attribute
+    of the result dict so the caller can route them to the full pipeline.
+
     Args:
         matches: Dict mapping query_id to list of EmbeddingMatch
         query_lengths: Dict mapping query IDs to sequence lengths
         db_dir: Database directory for metadata lookup
 
     Returns:
-        Dict mapping query_id to ConsensusResult
+        Tuple of (results_dict, skipped_ids) where results_dict maps
+        query_id to ConsensusResult and skipped_ids is a list of
+        query IDs skipped due to deleted/empty annotations.
     """
     from vhold.results.consensus import ConsensusResult
     from vhold.results.categories import classify_protein
@@ -498,6 +531,7 @@ def build_embedding_consensus_results(
     viro3d_expansion = None
 
     results = {}
+    skipped_ids = []
 
     for query_id, match_list in matches.items():
         if not match_list:
@@ -512,6 +546,11 @@ def build_embedding_consensus_results(
             best_match.source_db,
             db_dir,
         )
+
+        # Skip deleted/empty UniProt entries — route to full pipeline
+        if _is_deleted_annotation(annotation):
+            skipped_ids.append(query_id)
+            continue
 
         # Classify using all available evidence
         description = annotation.get("description", "hypothetical protein")
@@ -556,8 +595,14 @@ def build_embedding_consensus_results(
 
         results[query_id] = result
 
+    if skipped_ids:
+        logger.info(
+            f"Skipped {len(skipped_ids)} proteins matched to deleted/empty "
+            f"UniProt entries (routing to full pipeline)"
+        )
     logger.info(f"Built {len(results)} embedding-matched annotations")
-    return results
+
+    return results, skipped_ids
 
 
 # Metadata cache shared across calls within a single pipeline run
