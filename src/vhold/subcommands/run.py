@@ -2,15 +2,15 @@
 
 from pathlib import Path
 
-from vhold.features.prostt5 import get_predictor
 from vhold.features.confidence import apply_confidence_mask
-from vhold.features.foldseek import search_databases, merge_results
+from vhold.features.foldseek import merge_results, search_databases
+from vhold.features.prostt5 import get_predictor
 from vhold.io import read_input
-from vhold.io.fasta import write_fasta, write_3di_fasta
-from vhold.results.parser import parse_dataframe_results
+from vhold.io.fasta import write_3di_fasta, write_fasta
 from vhold.results.annotations import transfer_annotations_consensus
 from vhold.results.output import generate_report_consensus
-from vhold.utils.logging import setup_logging, get_logger
+from vhold.results.parser import parse_dataframe_results
+from vhold.utils.logging import get_logger, setup_logging
 
 logger = get_logger(__name__)
 
@@ -43,6 +43,8 @@ def run_pipeline(
     disorder: bool = False,
     disorder_threshold: float = 0.5,
     disorder_classifier_confidence: float = 0.5,
+    starling_search: bool = False,
+    starling_similarity_threshold: float = 0.7,
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -96,6 +98,8 @@ def run_pipeline(
         "disorder": disorder,
         "disorder_threshold": disorder_threshold,
         "disorder_classifier_confidence": disorder_classifier_confidence,
+        "starling_search": starling_search,
+        "starling_similarity_threshold": starling_similarity_threshold,
     }
 
     # ========================================
@@ -430,7 +434,7 @@ def run_pipeline(
                     f"Step 4a.5: MLP classification of {len(unknown_ids)} unknown proteins..."
                 )
 
-                from vhold.features.classifier import load_classifier, classify_with_model
+                from vhold.features.classifier import classify_with_model, load_classifier
 
                 classifier = load_classifier(
                     model_dir=Path(model_dir) if model_dir else None
@@ -489,11 +493,83 @@ def run_pipeline(
             )
 
     # ========================================
+    # Step 4a.6: STARLING similarity search (disordered unknowns)
+    # ========================================
+    if starling_search and disorder and disorder_results:
+        from vhold.features.starling_search import check_starling_search_available
+
+        if check_starling_search_available():
+            # Find disordered proteins still classified as unknown
+            starling_search_ids = [
+                qid for qid, result in annotations.items()
+                if result.functional_category == "unknown"
+                and result.disorder_class in ("partially_disordered", "highly_disordered")
+            ]
+
+            if starling_search_ids:
+                logger.info(
+                    f"Step 4a.6: STARLING search for "
+                    f"{len(starling_search_ids)} disordered unknown proteins..."
+                )
+
+                from vhold.features.starling_search import (
+                    build_starling_consensus_results,
+                    search_starling_database,
+                )
+
+                try:
+                    disordered_seqs = {
+                        sid: seq_dict[sid] for sid in starling_search_ids
+                        if sid in seq_dict
+                    }
+
+                    search_result = search_starling_database(
+                        disordered_seqs,
+                        disorder_results=disorder_results,
+                        similarity_threshold=starling_similarity_threshold,
+                        device=device if device != "auto" else None,
+                    )
+
+                    if search_result.matched:
+                        starling_annotations, skipped = build_starling_consensus_results(
+                            search_result.matched,
+                            query_lengths=seq_lengths,
+                        )
+
+                        # Merge: update existing annotations with STARLING results
+                        starling_reclassified = 0
+                        for qid, consensus in starling_annotations.items():
+                            if consensus.functional_category != "unknown":
+                                # Preserve disorder data from Step 4a.2
+                                consensus.disorder_fraction = annotations[qid].disorder_fraction
+                                consensus.disorder_regions = annotations[qid].disorder_regions
+                                consensus.disorder_class = annotations[qid].disorder_class
+                                # Preserve genomic positions
+                                consensus.contig = annotations[qid].contig
+                                consensus.start = annotations[qid].start
+                                consensus.end = annotations[qid].end
+                                consensus.strand = annotations[qid].strand
+                                annotations[qid] = consensus
+                                starling_reclassified += 1
+                                logger.info(
+                                    f"  {qid}: unknown -> {consensus.functional_category} "
+                                    f"(STARLING similarity: {search_result.matched[qid][0].similarity:.3f})"
+                                )
+
+                        logger.info(
+                            f"STARLING search: {starling_reclassified}/{len(starling_search_ids)} "
+                            f"disordered proteins annotated via ensemble similarity"
+                        )
+                except Exception as e:
+                    logger.warning(f"STARLING similarity search failed: {e}")
+                logger.info("")
+
+    # ========================================
     # Step 4a.7: Disorder-aware classifier (STARLING, for disordered unknowns)
     # ========================================
     if disorder and disorder_results:
-        from vhold.features.disorder import check_starling_available
         from vhold.databases.disorder_classifier import check_disorder_classifier
+        from vhold.features.disorder import check_starling_available
 
         if check_starling_available() and check_disorder_classifier(
             Path(model_dir) if model_dir else None
@@ -513,8 +589,8 @@ def run_pipeline(
 
                 from vhold.features.disorder import extract_starling_embeddings
                 from vhold.features.disorder_classifier import (
-                    load_disorder_classifier,
                     classify_disordered_proteins,
+                    load_disorder_classifier,
                 )
 
                 try:

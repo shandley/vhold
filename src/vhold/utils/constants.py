@@ -146,6 +146,11 @@ STARLING_MAX_SEQUENCE_LENGTH = 380  # STARLING max input length
 HIGH_DISORDER_FRACTION = 0.4  # >= 40% disordered = highly disordered
 MODERATE_DISORDER_FRACTION = 0.15  # >= 15% disordered = partially disordered
 
+# STARLING similarity search (against 35M UniRef50 IDR sequences)
+DEFAULT_STARLING_SIMILARITY_THRESHOLD = 0.7  # Min cosine similarity for search hits
+STARLING_SEARCH_K = 10  # Top-k hits to retrieve from FAISS index
+UNIPROT_BATCH_SIZE = 100  # UniProt REST API batch limit per request
+
 # Contrastive LoRA adapter for ProstT5 encoder
 CONTRASTIVE_LORA_DIR = "contrastive_lora"
 

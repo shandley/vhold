@@ -290,6 +290,7 @@ def install_databases(
     install_embeddings: bool = False,
     install_classifier: bool = False,
     install_disorder_classifier: bool = False,
+    install_starling_db: bool = False,
     force: bool = False,
 ) -> None:
     """Install databases for vhold.
@@ -301,6 +302,7 @@ def install_databases(
         install_embeddings: Whether to install embedding database for triage
         install_classifier: Whether to install MLP classifier model
         install_disorder_classifier: Whether to install disorder-aware classifier model
+        install_starling_db: Whether to install STARLING search database (~18.6GB)
         force: Force re-download even if files exist
     """
     setup_logging()
@@ -314,7 +316,7 @@ def install_databases(
     logger.info(f"Installing databases to {db_dir}")
 
     if not any([install_bfvd, install_viro3d, install_embeddings, install_classifier,
-                install_disorder_classifier]):
+                install_disorder_classifier, install_starling_db]):
         logger.warning("No databases selected for installation")
         return
 
@@ -344,6 +346,19 @@ def install_databases(
         from vhold.databases.disorder_classifier import install_disorder_classifier as _install_dc
         model_dir = get_model_dir()
         _install_dc(model_dir, force=force)
+
+    if install_starling_db:
+        logger.info("Installing STARLING search database (~18.6GB)...")
+        try:
+            from starling.search.search_engine import SearchEngine
+            SearchEngine.load("default")  # Triggers auto-download to ~/.starling_search/
+            logger.info("STARLING search database installed")
+        except ImportError:
+            logger.error(
+                "STARLING not installed. Install with: pip install vhold[starling]"
+            )
+        except Exception as e:
+            logger.error(f"STARLING database installation failed: {e}")
 
     logger.info("Database installation complete!")
 

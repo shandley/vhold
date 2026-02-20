@@ -56,12 +56,18 @@ def main():
     help="Download disorder-aware classifier model",
 )
 @click.option(
+    "--starling-db/--no-starling-db",
+    "starling_db",
+    default=False,
+    help="Download STARLING search database (~18.6GB)",
+)
+@click.option(
     "--all-models",
     is_flag=True,
     default=False,
     help="Download all optional models (embeddings + classifier + disorder classifier)",
 )
-def install(database, bfvd, viro3d, force, embeddings, classifier, disorder_classifier, all_models):
+def install(database, bfvd, viro3d, force, embeddings, classifier, disorder_classifier, starling_db, all_models):
     """Download and install reference databases.
 
     Downloads BFVD and Viro3D Foldseek databases and metadata files
@@ -80,6 +86,7 @@ def install(database, bfvd, viro3d, force, embeddings, classifier, disorder_clas
         install_embeddings=embeddings,
         install_classifier=classifier,
         install_disorder_classifier=disorder_classifier,
+        install_starling_db=starling_db,
         force=force,
     )
 
@@ -371,6 +378,18 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     help="Min confidence for disorder classifier (default: 0.5)",
 )
 @click.option(
+    "--starling-search/--no-starling-search",
+    "starling_search",
+    default=None,
+    help="Search STARLING IDR database for disordered unknowns (auto-enabled when available)",
+)
+@click.option(
+    "--starling-similarity-threshold",
+    default=0.7,
+    type=float,
+    help="Min similarity for STARLING search hits (default: 0.7)",
+)
+@click.option(
     "--input-format",
     type=click.Choice(["auto", "fasta", "genbank", "gff"]),
     default="auto",
@@ -396,6 +415,7 @@ def run(
     fast, llm_classify, llm_model, triage, triage_threshold,
     classify, classifier_confidence, backend, lora,
     disorder, disorder_threshold, disorder_classifier_confidence,
+    starling_search, starling_similarity_threshold,
     input_format, genome_fasta, export_formats,
 ):
     """Run the full vhold annotation pipeline.
@@ -436,6 +456,16 @@ def run(
                 "Use --no-disorder to disable."
             )
 
+    # Auto-detect STARLING search availability (requires disorder to be enabled)
+    if starling_search is None and disorder:
+        from vhold.features.starling_search import check_starling_search_available
+        starling_search = check_starling_search_available()
+        if starling_search:
+            click.echo(
+                "STARLING similarity search auto-enabled (SearchEngine detected). "
+                "Use --no-starling-search to disable."
+            )
+
     from vhold.subcommands.run import run_pipeline
     run_pipeline(
         input_file=input_file,
@@ -462,6 +492,8 @@ def run(
         disorder=disorder,
         disorder_threshold=disorder_threshold,
         disorder_classifier_confidence=disorder_classifier_confidence,
+        starling_search=bool(starling_search),
+        starling_similarity_threshold=starling_similarity_threshold,
         input_format=input_format,
         genome_fasta=genome_fasta,
         export_formats=list(export_formats) if export_formats else None,
