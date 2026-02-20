@@ -132,6 +132,11 @@ def search_starling_database(
         embeddings.append(emb)
     query_tensor = torch.stack(embeddings)  # (N, 512)
 
+    # L2 normalize for consistent cosine similarity conversion
+    norms = torch.norm(query_tensor, dim=1, keepdim=True)
+    norms = torch.where(norms > 0, norms, torch.ones_like(norms))
+    query_tensor = query_tensor / norms
+
     # Load search engine (auto-downloads database on first use)
     logger.info("Loading STARLING search engine...")
     engine = SearchEngine.load("default")

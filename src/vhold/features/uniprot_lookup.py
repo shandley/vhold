@@ -52,7 +52,8 @@ def extract_uniprot_accession(uniref50_id: str) -> str | None:
 
     # Fallback: try stripping common prefixes
     if uniref50_id.startswith("UniRef50_"):
-        return uniref50_id[9:]
+        suffix = uniref50_id[9:]
+        return suffix if suffix else None
 
     return None
 
@@ -183,11 +184,13 @@ def _parse_uniprot_entry(entry: dict) -> dict:
     organism = entry.get("organism", {})
     annotation["organism"] = organism.get("scientificName", "")
 
-    # GO terms
+    # GO terms and Pfam domains (single pass over cross-references)
     go_bp = []
     go_mf = []
+    pfam_domains = []
     for xref in entry.get("uniProtKBCrossReferences", []):
-        if xref.get("database") == "GO":
+        db = xref.get("database")
+        if db == "GO":
             go_id = xref.get("id", "")
             props = {p.get("key"): p.get("value") for p in xref.get("properties", [])}
             term = props.get("GoTerm", "")
@@ -195,21 +198,16 @@ def _parse_uniprot_entry(entry: dict) -> dict:
                 go_bp.append(f"{term[2:]} [{go_id}]")
             elif term.startswith("F:"):
                 go_mf.append(f"{term[2:]} [{go_id}]")
-
-    if go_bp:
-        annotation["go_bp"] = "; ".join(go_bp)
-    if go_mf:
-        annotation["go_mf"] = "; ".join(go_mf)
-
-    # Pfam domains
-    pfam_domains = []
-    for xref in entry.get("uniProtKBCrossReferences", []):
-        if xref.get("database") == "Pfam":
+        elif db == "Pfam":
             pfam_id = xref.get("id", "")
             props = {p.get("key"): p.get("value") for p in xref.get("properties", [])}
             name = props.get("EntryName", pfam_id)
             pfam_domains.append(f"{pfam_id}:{name}")
 
+    if go_bp:
+        annotation["go_bp"] = "; ".join(go_bp)
+    if go_mf:
+        annotation["go_mf"] = "; ".join(go_mf)
     if pfam_domains:
         annotation["pfam"] = "; ".join(pfam_domains)
 

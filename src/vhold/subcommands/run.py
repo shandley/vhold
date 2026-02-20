@@ -711,12 +711,19 @@ def run_pipeline(
     embedding_matched = sum(
         1 for a in annotations.values() if a.novelty == "embedding_match"
     )
+    ensemble_matched = sum(
+        1 for a in annotations.values() if a.novelty == "ensemble_match"
+    )
     logger.info("Summary:")
     logger.info(f"  Total proteins: {len(annotations)}")
     logger.info(f"  Annotated: {annotated} ({annotation_rate:.1f}%)")
     if embedding_matched:
         logger.info(f"  Embedding triage: {embedding_matched}")
-        logger.info(f"  Structural search: {annotated - embedding_matched}")
+    if ensemble_matched:
+        logger.info(f"  STARLING search: {ensemble_matched}")
+    foldseek_count = annotated - embedding_matched - ensemble_matched
+    if foldseek_count > 0 and (embedding_matched or ensemble_matched):
+        logger.info(f"  Structural search: {foldseek_count}")
     logger.info(f"  Multi-DB consensus: {with_consensus} ({consensus_rate:.1f}% of annotated)")
     logger.info(f"  Unannotated: {len(annotations) - annotated}")
 

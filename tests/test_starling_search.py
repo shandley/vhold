@@ -251,8 +251,7 @@ class TestExtractUniProtAccession:
 
     def test_prefix_only(self):
         result = extract_uniprot_accession("UniRef50_")
-        # Should return empty string from regex or fallback
-        assert result is not None  # Still matches the prefix pattern
+        assert result is None  # Empty accession returns None
 
 
 # ============================================================================

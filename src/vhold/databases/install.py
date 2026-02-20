@@ -250,6 +250,7 @@ def check_databases(db_dir: Path | None = None) -> dict[str, bool]:
         "embeddings": (db_dir / "embeddings" / EMBEDDING_DB_FILE).exists(),
         "classifier": (model_dir / "classifier" / CLASSIFIER_MODEL_FILE).exists(),
         "disorder_classifier": (model_dir / "disorder_classifier" / DISORDER_CLASSIFIER_FILE).exists(),
+        "starling_search": Path.home().joinpath(".starling_search").exists(),
     }
 
 
