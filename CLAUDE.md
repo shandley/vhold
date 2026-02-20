@@ -80,7 +80,7 @@ vHold Pipeline:
 | `scripts/calibrate_triage_threshold.py` | Triage threshold calibration across 4 case studies |
 | `scripts/build_go_term_map.py` | Build GO term name→ID JSON from OBO file |
 | `scripts/train_disorder_classifier.py` | Disorder classifier training (STARLING embeddings) |
-| `tests/` | 748 tests (pytest) |
+| `tests/` | 771 tests (pytest) |
 
 ## Implemented Features
 
@@ -294,6 +294,17 @@ Three-layer disorder integration for viral proteins poorly served by structural 
 
 **Novelty values**: `ensemble_match` (STARLING search), existing values unchanged.
 
+**UniProt API hardening** (completed):
+- GET requests with URL-encoded query params (POST not supported by `/uniprotkb/search`)
+- User-Agent identification: `vHold/1.0 (https://github.com/shandley/vhold)`
+- 3 retries with exponential backoff (1s, 2s, 4s) on HTTP 429/503
+- `Retry-After` header honored (delay-seconds format), clamped to [1, 300]s
+- UniProt lookup cache persisted to `{output_dir}/uniprot_cache.json` across runs
+- Atomic cache writes via `tempfile.mkstemp()` + `Path.replace()`
+- Resilient cache loading (handles corrupt JSON, unreadable files)
+- Module-level SearchEngine cache to avoid reloading 18.6GB FAISS index
+- Classification evidence source tracking: `classification_source=f"starling_search:{evidence_source}"`
+
 ### LLM Classification (`--llm/--no-llm`)
 - Post-processing step using Claude to reclassify proteins where keywords return "unknown"
 - **Auto-enabled** when `ANTHROPIC_API_KEY` is set; `--no-llm` to opt out
@@ -341,6 +352,7 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 | 3 | Metagenomic Dark Matter | 30 | 83.3% annotated, 70% RdRp classification |
 | 4 | crAssphage ORFans | 37 | Setup only (deprioritized - phage focus) |
 | 5 | Eukaryotic Viruses | 27 | 100% annotated, 81.5% consensus, 88.9% category accuracy (with LLM) |
+| 6 | T7 Phage | 60 | Complete (triage + structural search results available) |
 
 ## Known Issues
 
