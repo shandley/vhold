@@ -1,0 +1,56 @@
+LOCUS       DENGUE_TEST             3000 bp    ss-RNA  linear   VRL 01-JAN-2024
+DEFINITION  Dengue-like test virus polyprotein, complete cds.
+ACCESSION   DENGUE_TEST
+VERSION     DENGUE_TEST.1
+KEYWORDS    .
+SOURCE      Dengue-like test virus
+  ORGANISM  Dengue-like test virus
+            Viruses; Riboviria; Orthornavirae; Kitrinoviricota;
+            Flasuviricetes; Amarillovirales; Flaviviridae; Flavivirus.
+FEATURES             Location/Qualifiers
+     source          1..3000
+                     /organism="Dengue-like test virus"
+                     /mol_type="genomic RNA"
+     CDS             100..1500
+                     /gene="polyprotein"
+                     /locus_tag="DTV_001"
+                     /product="polyprotein"
+                     /protein_id="DTV_POLY"
+                     /translation="MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYG
+                     KLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYV
+                     QERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYF
+                     SDNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHY
+                     LSTQSALSKDPNEKRDHMIYFLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYP
+                     DHMKQHDFFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGID"
+     mat_peptide     100..400
+                     /gene="C"
+                     /product="capsid protein C"
+                     /protein_id="DTV_C"
+                     /translation="MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYG
+                     KLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYV
+                     QERTIFFKDD"
+     mat_peptide     401..800
+                     /gene="prM"
+                     /product="membrane glycoprotein precursor"
+                     /protein_id="DTV_PRM"
+                     /translation="GNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEY
+                     NYFSDNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLP
+                     DNHYLSTQSALSKDPNEKRDHMIY"
+     mat_peptide     801..1500
+                     /gene="E"
+                     /product="envelope protein E"
+                     /protein_id="DTV_E"
+                     /translation="FLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHD
+                     FFKSAMPEGYVQERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGN
+                     ILGHKLEYNYFSDNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPI"
+     CDS             1600..2000
+                     /gene="ns5"
+                     /locus_tag="DTV_002"
+                     /product="nonstructural protein NS5"
+                     /protein_id="DTV_NS5"
+                     /translation="MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYG
+                     KLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYV
+                     QERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGH"
+ORIGIN
+        1 atgcatgcat gcatgcatgc atgcatgcat gcatgcatgc atgcatgcat gcatgcatgc
+//

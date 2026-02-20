@@ -402,6 +402,12 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     help="Genome FASTA for GFF input (if not embedded in GFF)",
 )
 @click.option(
+    "--mat-peptide/--no-mat-peptide",
+    "include_mat_peptide",
+    default=True,
+    help="Extract mat_peptide features from GenBank (default: yes)",
+)
+@click.option(
     "--export-format",
     "export_formats",
     multiple=True,
@@ -416,7 +422,7 @@ def run(
     classify, classifier_confidence, backend, lora,
     disorder, disorder_threshold, disorder_classifier_confidence,
     use_starling_search, starling_similarity_threshold,
-    input_format, genome_fasta, export_formats,
+    input_format, genome_fasta, include_mat_peptide, export_formats,
 ):
     """Run the full vhold annotation pipeline.
 
@@ -496,6 +502,7 @@ def run(
         starling_similarity_threshold=starling_similarity_threshold,
         input_format=input_format,
         genome_fasta=genome_fasta,
+        include_mat_peptide=include_mat_peptide,
         export_formats=list(export_formats) if export_formats else None,
     )
 

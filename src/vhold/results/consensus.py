@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from vhold.results.categories import (
-    classify_protein,
     AnnotationEvidence,
     get_classification_source,
 )
@@ -125,6 +124,7 @@ class ConsensusResult:
     start: int | None = None
     end: int | None = None
     strand: int | None = None
+    feature_type: str = "CDS"  # "CDS" or "mat_peptide"
 
     # Disorder prediction (from metapredict, populated in Step 4a.2)
     disorder_fraction: float | None = None
@@ -190,6 +190,7 @@ class ConsensusResult:
             result["start"] = self.start
             result["end"] = self.end
             result["strand"] = self.strand
+            result["feature_type"] = self.feature_type
 
         # Add disorder prediction if available
         if self.disorder_fraction is not None:

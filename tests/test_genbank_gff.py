@@ -42,7 +42,7 @@ class TestReadGenbank:
         records = read_genbank(TEST_DATA / "test_viral.gb")
         rdrp = records["TV_RDRP"]
         assert rdrp.contig == "TEST_VIRUS.1"
-        assert rdrp.start == 99  # BioPython is 0-based
+        assert rdrp.start == 100  # 1-based inclusive (converted from BioPython 0-based)
         assert rdrp.end == 600
         assert rdrp.strand == 1
 
@@ -103,14 +103,14 @@ class TestGff3Helpers:
 
     def test_parse_gff3_features(self):
         """Should parse GFF3 features from file."""
-        features, fasta = _parse_gff3(TEST_DATA / "test_viral.gff3")
+        features, fasta, _comments = _parse_gff3(TEST_DATA / "test_viral.gff3")
         assert len(features) >= 3
         assert all(f["type"] == "CDS" for f in features)
         assert fasta  # Has embedded FASTA
 
     def test_parse_gff3_strand(self):
         """Should parse strand correctly."""
-        features, _ = _parse_gff3(TEST_DATA / "test_viral.gff3")
+        features, _, _comments = _parse_gff3(TEST_DATA / "test_viral.gff3")
         # gene_1 is +, gene_2 is -
         strands = {f["attributes"]["ID"]: f["strand"] for f in features}
         assert strands["gene_1"] == 1

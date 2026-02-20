@@ -1,0 +1,52 @@
+LOCUS       FLU_SEG1                2000 bp    ss-RNA  linear   VRL 01-JAN-2024
+DEFINITION  Influenza-like test virus segment 1, complete sequence.
+ACCESSION   FLU_SEG1
+VERSION     FLU_SEG1.1
+KEYWORDS    .
+SOURCE      Influenza-like test virus
+  ORGANISM  Influenza-like test virus
+            Viruses; Riboviria; Orthornavirae; Negarnaviricota;
+            Polyploviricotina; Insthoviricetes; Articulavirales;
+            Orthomyxoviridae.
+FEATURES             Location/Qualifiers
+     source          1..2000
+                     /organism="Influenza-like test virus"
+                     /mol_type="viral cRNA"
+                     /segment="1"
+     CDS             100..800
+                     /gene="PB2"
+                     /product="polymerase basic protein 2"
+                     /protein_id="SHARED_PROTEIN_ID"
+                     /translation="MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYG
+                     KLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYV
+                     QERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYF
+                     SDNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHY
+                     LSTQSALSKDPNEKRDHMIY"
+ORIGIN
+        1 atgcatgcat gcatgcatgc atgcatgcat gcatgcatgc atgcatgcat gcatgcatgc
+//
+LOCUS       FLU_SEG2                1500 bp    ss-RNA  linear   VRL 01-JAN-2024
+DEFINITION  Influenza-like test virus segment 2, complete sequence.
+ACCESSION   FLU_SEG2
+VERSION     FLU_SEG2.1
+KEYWORDS    .
+SOURCE      Influenza-like test virus
+  ORGANISM  Influenza-like test virus
+            Viruses; Riboviria; Orthornavirae; Negarnaviricota;
+            Polyploviricotina; Insthoviricetes; Articulavirales;
+            Orthomyxoviridae.
+FEATURES             Location/Qualifiers
+     source          1..1500
+                     /organism="Influenza-like test virus"
+                     /mol_type="viral cRNA"
+                     /segment="2"
+     CDS             100..700
+                     /gene="PB1"
+                     /product="polymerase basic protein 1"
+                     /protein_id="SHARED_PROTEIN_ID"
+                     /translation="MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYG
+                     KLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYV
+                     QERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGH"
+ORIGIN
+        1 atgcatgcat gcatgcatgc atgcatgcat gcatgcatgc atgcatgcat gcatgcatgc
+//

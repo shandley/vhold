@@ -405,9 +405,10 @@ def export_gff3(
                 attrs.append(f"Ontology_term={','.join(go_ids)}")
 
             score = evalue if _safe_str(evalue) and evalue != "." else "."
+            feat_type = _safe_str(row.get("feature_type", "CDS")) or "CDS"
 
             f.write(
-                f"{contig}\tvHold\tCDS\t{int(start)}\t{int(end)}\t{score}\t"
+                f"{contig}\tvHold\t{feat_type}\t{int(start)}\t{int(end)}\t{score}\t"
                 f"{strand}\t.\t{';'.join(attrs)}\n"
             )
             count += 1

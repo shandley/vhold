@@ -39,6 +39,7 @@ def run_pipeline(
     use_lora: bool = True,
     input_format: str | None = None,
     genome_fasta: str | Path | None = None,
+    include_mat_peptide: bool = True,
     export_formats: list[str] | None = None,
     disorder: bool = False,
     disorder_threshold: float = 0.5,
@@ -110,6 +111,7 @@ def run_pipeline(
         input_path,
         input_format=input_format,
         fasta_path=genome_fasta,
+        include_mat_peptide=include_mat_peptide,
     )
     logger.info(f"Read {len(sequences)} sequences")
 
@@ -126,6 +128,7 @@ def run_pipeline(
         rec.id: {
             "contig": rec.contig, "start": rec.start,
             "end": rec.end, "strand": rec.strand,
+            "feature_type": rec.feature_type,
         }
         for rec in sequences.values()
         if rec.contig is not None
@@ -370,6 +373,7 @@ def run_pipeline(
                 annotations[qid].start = pos["start"]
                 annotations[qid].end = pos["end"]
                 annotations[qid].strand = pos["strand"]
+                annotations[qid].feature_type = pos["feature_type"]
 
     # Count total results
     annotated = sum(1 for a in annotations.values() if a.is_annotated)

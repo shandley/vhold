@@ -1,0 +1,36 @@
+LOCUS       HIV_TEST                5000 bp    ss-RNA  linear   VRL 01-JAN-2024
+DEFINITION  HIV-like test virus, complete genome.
+ACCESSION   HIV_TEST
+VERSION     HIV_TEST.1
+KEYWORDS    .
+SOURCE      HIV-like test virus
+  ORGANISM  HIV-like test virus
+            Viruses; Riboviria; Pararnavirae; Artverviricota;
+            Revtraviricetes; Ortervirales; Retroviridae; Lentivirus.
+FEATURES             Location/Qualifiers
+     source          1..5000
+                     /organism="HIV-like test virus"
+                     /mol_type="genomic RNA"
+     CDS             join(100..300,500..700)
+                     /gene="tat"
+                     /locus_tag="HTV_001"
+                     /product="transactivating regulatory protein"
+                     /protein_id="HTV_TAT"
+                     /db_xref="GeneID:12345"
+                     /note="spliced gene product; exon 1 + exon 2"
+                     /translation="MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYG
+                     KLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYV
+                     QERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGH"
+     CDS             800..1500
+                     /gene="gag"
+                     /locus_tag="HTV_002"
+                     /product="Gag polyprotein"
+                     /protein_id="HTV_GAG"
+                     /translation="MSKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYG
+                     KLTLKFICTTGKLPVPWPTLVTTFSYGVQCFSRYPDHMKQHDFFKSAMPEGYV
+                     QERTIFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYF
+                     SDNVYITADKQKNGIKANFKIRHNVEDGSVQLADHYQQNTPIGDGPVLLPDNHY
+                     LSTQSALSKDPNEKRDHMIY"
+ORIGIN
+        1 atgcatgcat gcatgcatgc atgcatgcat gcatgcatgc atgcatgcat gcatgcatgc
+//

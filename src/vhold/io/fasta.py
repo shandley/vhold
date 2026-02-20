@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 from Bio import SeqIO
 from Bio.Seq import Seq
@@ -26,6 +25,7 @@ class ProteinRecord:
     end: int | None = None
     strand: int | None = None  # +1 or -1
     source_annotations: dict | None = None
+    feature_type: str = "CDS"  # "CDS" or "mat_peptide"
 
     @property
     def length(self) -> int:
@@ -47,14 +47,18 @@ def read_fasta(
 ) -> dict[str, ProteinRecord]:
     """Read protein sequences from a FASTA file.
 
+    Supports plain text and gzip-compressed files (detected by magic bytes).
+
     Args:
-        path: Path to FASTA file
+        path: Path to FASTA file (plain or .gz)
         max_length: Maximum sequence length (None for no limit)
         min_length: Minimum sequence length
 
     Returns:
         Dict mapping sequence IDs to ProteinRecord objects
     """
+    from vhold.io.utils import check_duplicate_id, open_maybe_gzip, validate_protein_sequence
+
     path = Path(path)
 
     if not path.exists():
@@ -62,27 +66,39 @@ def read_fasta(
 
     logger.info(f"Reading sequences from {path}")
 
-    records = {}
+    records: dict[str, ProteinRecord] = {}
     skipped_short = 0
     skipped_long = 0
 
-    for record in SeqIO.parse(path, "fasta"):
-        seq = str(record.seq).upper()
+    with open_maybe_gzip(path) as handle:
+        for record in SeqIO.parse(handle, "fasta"):
+            seq = str(record.seq).upper()
 
-        # Filter by length
-        if len(seq) < min_length:
-            skipped_short += 1
-            continue
+            # Validate and clean sequence
+            seq, warnings = validate_protein_sequence(seq, record.id)
+            for w in warnings:
+                logger.warning(w)
 
-        if max_length and len(seq) > max_length:
-            skipped_long += 1
-            continue
+            if not seq:
+                continue
 
-        records[record.id] = ProteinRecord(
-            id=record.id,
-            sequence=seq,
-            description=record.description,
-        )
+            # Filter by length
+            if len(seq) < min_length:
+                skipped_short += 1
+                continue
+
+            if max_length and len(seq) > max_length:
+                skipped_long += 1
+                continue
+
+            # Handle duplicate IDs
+            safe_id = check_duplicate_id(record.id, records)
+
+            records[safe_id] = ProteinRecord(
+                id=safe_id,
+                sequence=seq,
+                description=record.description,
+            )
 
     logger.info(f"Read {len(records)} sequences from {path}")
 
@@ -93,25 +109,6 @@ def read_fasta(
         logger.warning(f"Skipped {skipped_long} sequences longer than {max_length} aa")
 
     return records
-
-
-def iterate_fasta(path: str | Path) -> Iterator[ProteinRecord]:
-    """Iterate over sequences in a FASTA file without loading all into memory.
-
-    Args:
-        path: Path to FASTA file
-
-    Yields:
-        ProteinRecord for each sequence
-    """
-    path = Path(path)
-
-    for record in SeqIO.parse(path, "fasta"):
-        yield ProteinRecord(
-            id=record.id,
-            sequence=str(record.seq).upper(),
-            description=record.description,
-        )
 
 
 def write_fasta(
