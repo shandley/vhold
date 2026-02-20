@@ -46,6 +46,10 @@ class DarkMatterProtein:
     # Source databases that had hits
     databases_with_hits: list[str] = field(default_factory=list)
 
+    # Disorder prediction (propagated from ConsensusResult)
+    disorder_class: str | None = None
+    disorder_fraction: float | None = None
+
 
 @dataclass
 class DarkMatterReport:
@@ -87,6 +91,20 @@ class DarkMatterReport:
                 },
                 "by_confidence": self.by_confidence,
                 "length_stats": self.length_stats,
+                "by_disorder_class": {
+                    "highly_disordered": sum(
+                        1 for p in self.proteins if p.disorder_class == "highly_disordered"
+                    ),
+                    "partially_disordered": sum(
+                        1 for p in self.proteins if p.disorder_class == "partially_disordered"
+                    ),
+                    "ordered": sum(
+                        1 for p in self.proteins if p.disorder_class == "ordered"
+                    ),
+                    "unknown": sum(
+                        1 for p in self.proteins if p.disorder_class is None
+                    ),
+                },
             },
             "proteins": [
                 {
@@ -99,6 +117,8 @@ class DarkMatterReport:
                     "confidence_level": p.confidence_level,
                     "description": p.description,
                     "databases_with_hits": p.databases_with_hits,
+                    "disorder_class": p.disorder_class,
+                    "disorder_fraction": p.disorder_fraction,
                 }
                 for p in self.proteins
             ],
@@ -142,6 +162,8 @@ def classify_dark_matter(result: ConsensusResult) -> Optional[DarkMatterProtein]
             category="no_hits",
             reason="No structural homologs detected in any database",
             confidence_level="none",
+            disorder_class=result.disorder_class,
+            disorder_fraction=result.disorder_fraction,
         )
 
     # Category 2: Unknown functional category
@@ -171,6 +193,8 @@ def classify_dark_matter(result: ConsensusResult) -> Optional[DarkMatterProtein]
                     consensus_score=result.consensus_score,
                     description=result.description,
                     databases_with_hits=databases_with_hits,
+                    disorder_class=result.disorder_class,
+                    disorder_fraction=result.disorder_fraction,
                 )
             else:
                 return DarkMatterProtein(
@@ -184,6 +208,8 @@ def classify_dark_matter(result: ConsensusResult) -> Optional[DarkMatterProtein]
                     consensus_score=result.consensus_score,
                     description=result.description,
                     databases_with_hits=databases_with_hits,
+                    disorder_class=result.disorder_class,
+                    disorder_fraction=result.disorder_fraction,
                 )
 
     # Category 3: Has hits but very weak confidence
@@ -200,6 +226,8 @@ def classify_dark_matter(result: ConsensusResult) -> Optional[DarkMatterProtein]
                 consensus_score=result.consensus_score,
                 description=result.description,
                 databases_with_hits=list(result.hits_by_db.keys()),
+                disorder_class=result.disorder_class,
+                disorder_fraction=result.disorder_fraction,
             )
 
     # Not dark matter
@@ -277,7 +305,7 @@ def get_dark_matter_summary(report: DarkMatterReport) -> dict:
     Returns:
         Dict with summary statistics
     """
-    return {
+    summary = {
         "total_dark_matter": report.total_dark_matter,
         "dark_matter_rate": round(report.dark_matter_rate, 4),
         "by_category": {
@@ -288,6 +316,25 @@ def get_dark_matter_summary(report: DarkMatterReport) -> dict:
         "by_confidence": report.by_confidence,
         "length_stats": report.length_stats,
     }
+
+    # Add disorder breakdown if any protein has disorder data
+    if any(p.disorder_class is not None for p in report.proteins):
+        summary["by_disorder_class"] = {
+            "highly_disordered": sum(
+                1 for p in report.proteins if p.disorder_class == "highly_disordered"
+            ),
+            "partially_disordered": sum(
+                1 for p in report.proteins if p.disorder_class == "partially_disordered"
+            ),
+            "ordered": sum(
+                1 for p in report.proteins if p.disorder_class == "ordered"
+            ),
+            "unknown": sum(
+                1 for p in report.proteins if p.disorder_class is None
+            ),
+        }
+
+    return summary
 
 
 def enhance_dark_matter_with_metagenomics(

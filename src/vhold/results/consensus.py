@@ -126,6 +126,11 @@ class ConsensusResult:
     end: int | None = None
     strand: int | None = None
 
+    # Disorder prediction (from metapredict, populated in Step 4a.2)
+    disorder_fraction: float | None = None
+    disorder_regions: list | None = None
+    disorder_class: str | None = None  # "ordered", "partially_disordered", "highly_disordered"
+
     # All hits by database
     hits_by_db: dict = field(default_factory=dict)
 
@@ -185,6 +190,15 @@ class ConsensusResult:
             result["start"] = self.start
             result["end"] = self.end
             result["strand"] = self.strand
+
+        # Add disorder prediction if available
+        if self.disorder_fraction is not None:
+            result["disorder_fraction"] = round(self.disorder_fraction, 3)
+            result["disorder_class"] = self.disorder_class
+            if self.disorder_regions:
+                result["disorder_regions"] = ";".join(
+                    f"{s}-{e}" for s, e in self.disorder_regions
+                )
 
         # Add hit counts per database
         for db, hits in self.hits_by_db.items():

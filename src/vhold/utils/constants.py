@@ -65,6 +65,7 @@ VHOLD_ZENODO_FILES = {
     "embeddings": "vhold_embeddings.npz",  # 822 MB
     "bfvd_enriched": "bfvd_metadata_enriched.tsv",  # 79 MB
     "classifier": "vhold_classifier.pt",  # 2.6 MB
+    "disorder_classifier": "vhold_disorder_classifier.pt",  # ~1 MB
 }
 
 
@@ -136,6 +137,14 @@ EMBEDDING_DB_FILE = "vhold_embeddings.npz"
 # MLP functional classifier
 CLASSIFIER_MODEL_FILE = "vhold_classifier.pt"
 DEFAULT_CLASSIFIER_CONFIDENCE = 0.5
+
+# Disorder prediction (metapredict + STARLING)
+DISORDER_CLASSIFIER_FILE = "vhold_disorder_classifier.pt"
+DEFAULT_DISORDER_THRESHOLD = 0.5  # metapredict V3 default
+STARLING_EMBEDDING_DIM = 512  # STARLING latent dimension (configs.UNET_LABELS_DIM)
+STARLING_MAX_SEQUENCE_LENGTH = 380  # STARLING max input length
+HIGH_DISORDER_FRACTION = 0.4  # >= 40% disordered = highly disordered
+MODERATE_DISORDER_FRACTION = 0.15  # >= 15% disordered = partially disordered
 
 # Contrastive LoRA adapter for ProstT5 encoder
 CONTRASTIVE_LORA_DIR = "contrastive_lora"

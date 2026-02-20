@@ -50,12 +50,18 @@ def main():
     help="Download MLP classifier model",
 )
 @click.option(
+    "--disorder-classifier/--no-disorder-classifier",
+    "disorder_classifier",
+    default=False,
+    help="Download disorder-aware classifier model",
+)
+@click.option(
     "--all-models",
     is_flag=True,
     default=False,
-    help="Download all optional models (embeddings + classifier)",
+    help="Download all optional models (embeddings + classifier + disorder classifier)",
 )
-def install(database, bfvd, viro3d, force, embeddings, classifier, all_models):
+def install(database, bfvd, viro3d, force, embeddings, classifier, disorder_classifier, all_models):
     """Download and install reference databases.
 
     Downloads BFVD and Viro3D Foldseek databases and metadata files
@@ -64,6 +70,7 @@ def install(database, bfvd, viro3d, force, embeddings, classifier, all_models):
     if all_models:
         embeddings = True
         classifier = True
+        disorder_classifier = True
 
     from vhold.databases.install import install_databases
     install_databases(
@@ -72,6 +79,7 @@ def install(database, bfvd, viro3d, force, embeddings, classifier, all_models):
         install_viro3d=viro3d,
         install_embeddings=embeddings,
         install_classifier=classifier,
+        install_disorder_classifier=disorder_classifier,
         force=force,
     )
 
@@ -345,6 +353,24 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     help="Auto-load contrastive LoRA adapter if installed (default: yes)",
 )
 @click.option(
+    "--disorder/--no-disorder",
+    "disorder",
+    default=None,
+    help="Predict intrinsic disorder (auto-enabled when metapredict installed)",
+)
+@click.option(
+    "--disorder-threshold",
+    default=0.5,
+    type=float,
+    help="Per-residue disorder threshold (default: 0.5)",
+)
+@click.option(
+    "--disorder-classifier-confidence",
+    default=0.5,
+    type=float,
+    help="Min confidence for disorder classifier (default: 0.5)",
+)
+@click.option(
     "--input-format",
     type=click.Choice(["auto", "fasta", "genbank", "gff"]),
     default="auto",
@@ -369,6 +395,7 @@ def run(
     evalue, sensitivity, confidence_threshold, model_dir, prefix,
     fast, llm_classify, llm_model, triage, triage_threshold,
     classify, classifier_confidence, backend, lora,
+    disorder, disorder_threshold, disorder_classifier_confidence,
     input_format, genome_fasta, export_formats,
 ):
     """Run the full vhold annotation pipeline.
@@ -399,6 +426,16 @@ def run(
                 "Use --no-llm to disable."
             )
 
+    # Auto-detect disorder prediction availability
+    if disorder is None:
+        from vhold.features.disorder import check_metapredict_available
+        disorder = check_metapredict_available()
+        if disorder:
+            click.echo(
+                "Disorder prediction auto-enabled (metapredict detected). "
+                "Use --no-disorder to disable."
+            )
+
     from vhold.subcommands.run import run_pipeline
     run_pipeline(
         input_file=input_file,
@@ -422,6 +459,9 @@ def run(
         classifier_confidence=classifier_confidence,
         backend=backend,
         use_lora=lora,
+        disorder=disorder,
+        disorder_threshold=disorder_threshold,
+        disorder_classifier_confidence=disorder_classifier_confidence,
         input_format=input_format,
         genome_fasta=genome_fasta,
         export_formats=list(export_formats) if export_formats else None,

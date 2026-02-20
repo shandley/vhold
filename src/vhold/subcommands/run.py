@@ -40,6 +40,9 @@ def run_pipeline(
     input_format: str | None = None,
     genome_fasta: str | Path | None = None,
     export_formats: list[str] | None = None,
+    disorder: bool = False,
+    disorder_threshold: float = 0.5,
+    disorder_classifier_confidence: float = 0.5,
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -90,6 +93,8 @@ def run_pipeline(
         "confidence_threshold": confidence_threshold,
         "triage": triage,
         "triage_threshold": triage_threshold,
+        "disorder": disorder,
+        "disorder_threshold": disorder_threshold,
     }
 
     # ========================================
@@ -367,6 +372,44 @@ def run_pipeline(
     logger.info("")
 
     # ========================================
+    # Step 4a.2: Disorder annotation (auto-enabled)
+    # ========================================
+    disorder_results = {}
+    if disorder:
+        from vhold.features.disorder import check_metapredict_available
+
+        if check_metapredict_available():
+            from vhold.features.disorder import predict_disorder_batch
+
+            logger.info(
+                f"Step 4a.2: Predicting disorder for {len(seq_dict)} proteins..."
+            )
+            disorder_results = predict_disorder_batch(
+                seq_dict, threshold=disorder_threshold,
+            )
+
+            # Propagate disorder data to ConsensusResult objects
+            n_disordered = 0
+            for pid, dr in disorder_results.items():
+                if pid in annotations:
+                    annotations[pid].disorder_fraction = dr.disorder_fraction
+                    annotations[pid].disorder_regions = dr.disorder_regions
+                    annotations[pid].disorder_class = dr.disorder_class
+                    if dr.disorder_class != "ordered":
+                        n_disordered += 1
+
+            logger.info(
+                f"Disorder: {n_disordered} partially/highly disordered proteins "
+                f"out of {len(disorder_results)}"
+            )
+            logger.info("")
+        else:
+            logger.warning(
+                "metapredict not installed, skipping disorder prediction. "
+                "Install with: pip install vhold[disorder]"
+            )
+
+    # ========================================
     # Step 4a.5: MLP classification (when model installed)
     # ========================================
     if classify:
@@ -443,6 +486,74 @@ def run_pipeline(
                 "MLP classifier not installed, skipping Step 4a.5. "
                 "Run 'vhold install --classifier' to enable."
             )
+
+    # ========================================
+    # Step 4a.7: Disorder-aware classifier (STARLING, for disordered unknowns)
+    # ========================================
+    if disorder and disorder_results:
+        from vhold.features.disorder import check_starling_available
+        from vhold.databases.disorder_classifier import check_disorder_classifier
+
+        if check_starling_available() and check_disorder_classifier(
+            Path(model_dir) if model_dir else None
+        ):
+            # Find disordered unknowns
+            disordered_unknown_ids = [
+                qid for qid, result in annotations.items()
+                if result.functional_category == "unknown"
+                and result.disorder_class in ("partially_disordered", "highly_disordered")
+            ]
+
+            if disordered_unknown_ids:
+                logger.info(
+                    f"Step 4a.7: STARLING classification of "
+                    f"{len(disordered_unknown_ids)} disordered unknown proteins..."
+                )
+
+                from vhold.features.disorder import extract_starling_embeddings
+                from vhold.features.disorder_classifier import (
+                    load_disorder_classifier,
+                    classify_disordered_proteins,
+                )
+
+                # Extract STARLING embeddings for disordered unknowns
+                disordered_seqs = {
+                    sid: seq_dict[sid] for sid in disordered_unknown_ids
+                    if sid in seq_dict
+                }
+                ids, starling_embeddings = extract_starling_embeddings(
+                    disordered_seqs,
+                    disorder_results=disorder_results,
+                    aggregate=True,
+                    device=device if device != "auto" else None,
+                )
+
+                disorder_clf = load_disorder_classifier(
+                    model_dir=Path(model_dir) if model_dir else None,
+                )
+
+                if disorder_clf is not None:
+                    predictions = classify_disordered_proteins(
+                        starling_embeddings, ids, disorder_clf,
+                        confidence_threshold=disorder_classifier_confidence,
+                    )
+
+                    reclassified = 0
+                    for pid, (category, confidence) in predictions.items():
+                        if pid in annotations:
+                            annotations[pid].functional_category = category
+                            annotations[pid].classification_source = "disorder_classifier"
+                            reclassified += 1
+                            logger.info(
+                                f"  {pid}: unknown -> {category} "
+                                f"(disorder confidence: {confidence:.3f})"
+                            )
+
+                    logger.info(
+                        f"Disorder classifier: {reclassified}/{len(disordered_unknown_ids)} "
+                        f"disordered proteins reclassified"
+                    )
+                logger.info("")
 
     # ========================================
     # Step 4b: LLM reclassification (optional)

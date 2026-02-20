@@ -235,7 +235,11 @@ def check_databases(db_dir: Path | None = None) -> dict[str, bool]:
 
     db_dir = Path(db_dir)
 
-    from vhold.utils.constants import CLASSIFIER_MODEL_FILE, EMBEDDING_DB_FILE
+    from vhold.utils.constants import (
+        CLASSIFIER_MODEL_FILE,
+        DISORDER_CLASSIFIER_FILE,
+        EMBEDDING_DB_FILE,
+    )
 
     model_dir = get_model_dir()
 
@@ -245,6 +249,7 @@ def check_databases(db_dir: Path | None = None) -> dict[str, bool]:
         "viro3d": (db_dir / "viro3d" / "viro3d_metadata.tsv").exists(),
         "embeddings": (db_dir / "embeddings" / EMBEDDING_DB_FILE).exists(),
         "classifier": (model_dir / "classifier" / CLASSIFIER_MODEL_FILE).exists(),
+        "disorder_classifier": (model_dir / "disorder_classifier" / DISORDER_CLASSIFIER_FILE).exists(),
     }
 
 
@@ -284,6 +289,7 @@ def install_databases(
     install_viro3d: bool = True,
     install_embeddings: bool = False,
     install_classifier: bool = False,
+    install_disorder_classifier: bool = False,
     force: bool = False,
 ) -> None:
     """Install databases for vhold.
@@ -294,6 +300,7 @@ def install_databases(
         install_viro3d: Whether to install Viro3D
         install_embeddings: Whether to install embedding database for triage
         install_classifier: Whether to install MLP classifier model
+        install_disorder_classifier: Whether to install disorder-aware classifier model
         force: Force re-download even if files exist
     """
     setup_logging()
@@ -306,7 +313,8 @@ def install_databases(
     db_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Installing databases to {db_dir}")
 
-    if not any([install_bfvd, install_viro3d, install_embeddings, install_classifier]):
+    if not any([install_bfvd, install_viro3d, install_embeddings, install_classifier,
+                install_disorder_classifier]):
         logger.warning("No databases selected for installation")
         return
 
@@ -330,6 +338,12 @@ def install_databases(
         from vhold.databases.classifier import install_classifier_model
         model_dir = get_model_dir()
         install_classifier_model(model_dir, force=force)
+
+    if install_disorder_classifier:
+        logger.info("Installing disorder classifier model...")
+        from vhold.databases.disorder_classifier import install_disorder_classifier as _install_dc
+        model_dir = get_model_dir()
+        _install_dc(model_dir, force=force)
 
     logger.info("Database installation complete!")
 

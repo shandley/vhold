@@ -73,6 +73,9 @@ CONSENSUS_TSV_COLUMNS = [
     "superfamily",
     "bfvd_hits",
     "viro3d_hits",
+    "disorder_fraction",
+    "disorder_class",
+    "disorder_regions",
 ]
 
 
@@ -371,6 +374,30 @@ def write_consensus_summary_json(
             nov = ann.novelty
             novelty_dist[nov] = novelty_dist.get(nov, 0) + 1
 
+    # Disorder statistics
+    disorder_stats = {}
+    disorder_fractions = [
+        ann.disorder_fraction
+        for ann in annotations.values()
+        if ann.disorder_fraction is not None
+    ]
+    if disorder_fractions:
+        disorder_stats = {
+            "proteins_with_disorder_data": len(disorder_fractions),
+            "mean_disorder_fraction": round(
+                sum(disorder_fractions) / len(disorder_fractions), 3
+            ),
+            "highly_disordered": sum(
+                1 for a in annotations.values() if a.disorder_class == "highly_disordered"
+            ),
+            "partially_disordered": sum(
+                1 for a in annotations.values() if a.disorder_class == "partially_disordered"
+            ),
+            "ordered": sum(
+                1 for a in annotations.values() if a.disorder_class == "ordered"
+            ),
+        }
+
     # Analyze dark matter proteins
     dark_matter_report = analyze_dark_matter(annotations)
     dark_matter_summary = get_dark_matter_summary(dark_matter_report)
@@ -398,6 +425,7 @@ def write_consensus_summary_json(
             "evalue_stats": evalue_stats,
             "structure_quality_stats": structure_quality_stats,
             "structure_quality_source_distribution": structure_source_dist,
+            "disorder_stats": disorder_stats,
         },
         "dark_matter": dark_matter_summary,
     }
@@ -439,6 +467,12 @@ def write_dark_matter_tsv(
             "consensus_score": protein.consensus_score if protein.consensus_score > 0 else "",
             "description": protein.description,
             "databases_with_hits": ",".join(protein.databases_with_hits),
+            "disorder_class": protein.disorder_class if protein.disorder_class else "",
+            "disorder_fraction": (
+                round(protein.disorder_fraction, 3)
+                if protein.disorder_fraction is not None
+                else ""
+            ),
         }
         rows.append(row)
 
