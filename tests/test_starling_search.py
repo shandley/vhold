@@ -224,8 +224,15 @@ class TestCheckAvailability:
             assert check_starling_search_available() is True
 
     def test_not_available(self):
-        # Without mocking, starling is not installed
-        with patch.dict("sys.modules", {"starling": None}):
+        # Patch all submodule entries so cached imports are also blocked
+        with patch.dict(
+            "sys.modules",
+            {
+                "starling": None,
+                "starling.search": None,
+                "starling.search.search_engine": None,
+            },
+        ):
             assert check_starling_search_available() is False
 
 
@@ -743,6 +750,8 @@ class TestUniProtAPIConfig:
 
         assert result == {}
         assert mock_urlopen.call_count == MAX_RETRIES
+        # Last attempt should not sleep (exits loop), so N-1 sleeps
+        assert mock_sleep.call_count == MAX_RETRIES - 1
 
     @patch("vhold.features.uniprot_lookup.time.sleep")
     @patch("vhold.features.uniprot_lookup.urllib.request.urlopen")
@@ -809,14 +818,32 @@ class TestParseRetryAfter:
         result = _parse_retry_after(None, attempt=2)
         assert result == RETRY_BACKOFF_BASE * 4  # 2^2
 
+    def test_negative_value_falls_back(self):
+        """Negative Retry-After should fall back to backoff."""
+        from vhold.features.uniprot_lookup import _parse_retry_after
+        result = _parse_retry_after("-1", attempt=0)
+        assert result == RETRY_BACKOFF_BASE  # 2^0
+
+    def test_zero_falls_back(self):
+        """Zero Retry-After should fall back to backoff."""
+        from vhold.features.uniprot_lookup import _parse_retry_after
+        result = _parse_retry_after("0", attempt=0)
+        assert result == RETRY_BACKOFF_BASE
+
+    def test_absurdly_large_clamped(self):
+        """Values >300s should fall back to backoff."""
+        from vhold.features.uniprot_lookup import _parse_retry_after
+        result = _parse_retry_after("999999", attempt=0)
+        assert result == RETRY_BACKOFF_BASE
+
 
 # ============================================================================
-# Corrupt cache handling
+# Cache resilience
 # ============================================================================
 
 
-class TestCorruptCache:
-    """Test cache resilience to corruption."""
+class TestCacheResilience:
+    """Test cache save/load resilience to corruption and edge cases."""
 
     def test_load_corrupt_json(self, tmp_path):
         """Corrupt JSON should return empty dict, not crash."""
@@ -826,6 +853,19 @@ class TestCorruptCache:
         cache_path.write_text('{"truncated": ')
         loaded = load_lookup_cache(cache_path)
         assert loaded == {}
+
+    def test_load_unreadable_file(self, tmp_path):
+        """Unreadable file should return empty dict, not crash."""
+        from vhold.features.uniprot_lookup import load_lookup_cache
+
+        cache_path = tmp_path / "unreadable.json"
+        cache_path.write_text('{"valid": true}')
+        cache_path.chmod(0o000)
+        try:
+            loaded = load_lookup_cache(cache_path)
+            assert loaded == {}
+        finally:
+            cache_path.chmod(0o644)
 
     def test_atomic_save(self, tmp_path):
         """save_lookup_cache should produce valid JSON."""
@@ -837,6 +877,33 @@ class TestCorruptCache:
 
         loaded = load_lookup_cache(cache_path)
         assert loaded == cache
+
+    def test_save_creates_parent_dirs(self, tmp_path):
+        """save_lookup_cache should create parent directories."""
+        from vhold.features.uniprot_lookup import save_lookup_cache
+
+        cache = {"A": {"test": True}}
+        nested = tmp_path / "a" / "b" / "cache.json"
+        save_lookup_cache(cache, nested)
+        assert nested.exists()
+
+    def test_atomic_save_no_temp_files_on_failure(self, tmp_path):
+        """Failed save should not leave temp files behind."""
+        import glob
+
+        from vhold.features.uniprot_lookup import save_lookup_cache
+
+        # Object that can't be JSON-serialized
+        cache = {"bad": object()}  # type: ignore[dict-item]
+        cache_path = tmp_path / "cache.json"
+
+        with pytest.raises(TypeError):
+            save_lookup_cache(cache, cache_path)
+
+        # No temp files should remain
+        tmp_files = glob.glob(str(tmp_path / "*.json.tmp"))
+        assert tmp_files == []
+        assert not cache_path.exists()
 
 
 # ============================================================================

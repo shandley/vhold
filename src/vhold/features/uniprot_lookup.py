@@ -110,19 +110,22 @@ def lookup_uniprot_batch(
 def _parse_retry_after(header_value: str | None, attempt: int) -> float:
     """Parse Retry-After header to a wait time in seconds.
 
-    Handles both delay-seconds ("120") and HTTP-date formats per RFC 9110.
-    Falls back to exponential backoff if unparseable.
+    Accepts delay-seconds format ("120"); HTTP-date format and other
+    unparseable values fall back to exponential backoff.
+    Clamped to [1, 300] seconds to avoid hangs from malformed headers.
 
     Args:
         header_value: Raw Retry-After header value (or None)
         attempt: Current retry attempt (0-indexed) for backoff calculation
 
     Returns:
-        Wait time in seconds
+        Wait time in seconds (clamped to 1-300s)
     """
     if header_value is not None:
         try:
-            return float(header_value)
+            value = float(header_value)
+            if 0 < value <= 300:
+                return value
         except (ValueError, TypeError):
             pass
     return RETRY_BACKOFF_BASE * (2 ** attempt)
@@ -141,6 +144,8 @@ def _fetch_uniprot_batch(accessions: list[str]) -> dict[str, dict]:
     """
     fields_param = ",".join(UNIPROT_FIELDS)
     query = " OR ".join(f"accession:{acc}" for acc in accessions)
+    # URL length with 100 accessions: ~3KB, well under 8KB server limit.
+    # If UNIPROT_BATCH_SIZE increases beyond ~250, consider URL length validation.
     url = (
         f"{UNIPROT_API_BASE}/uniprotkb/search"
         f"?query={urllib.parse.quote(query)}"
@@ -319,6 +324,6 @@ def load_lookup_cache(cache_path: Path) -> dict[str, dict]:
             cache = json.load(f)
         logger.info(f"Loaded UniProt cache ({len(cache)} entries) from {cache_path}")
         return cache
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.warning(f"Corrupt UniProt cache at {cache_path}, starting fresh: {e}")
+    except (json.JSONDecodeError, ValueError, OSError) as e:
+        logger.warning(f"Could not load UniProt cache at {cache_path}, starting fresh: {e}")
         return {}

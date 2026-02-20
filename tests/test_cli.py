@@ -81,7 +81,7 @@ class TestLlmAutoDetection:
                 env={"ANTHROPIC_API_KEY": "sk-test-key"},
             )
 
-        assert "auto-enabled" in result.output
+        assert "LLM classification auto-enabled" in result.output
         call_kwargs = mock_run.call_args
         assert call_kwargs.kwargs["llm_classify"] is True
 
@@ -98,7 +98,7 @@ class TestLlmAutoDetection:
                 env={"ANTHROPIC_API_KEY": ""},
             )
 
-        assert "auto-enabled" not in result.output
+        assert "LLM classification auto-enabled" not in result.output
         call_kwargs = mock_run.call_args
         assert call_kwargs.kwargs["llm_classify"] is False
 
@@ -115,7 +115,7 @@ class TestLlmAutoDetection:
                 env={"ANTHROPIC_API_KEY": "sk-test-key"},
             )
 
-        assert "auto-enabled" not in result.output
+        assert "LLM classification auto-enabled" not in result.output
         call_kwargs = mock_run.call_args
         assert call_kwargs.kwargs["llm_classify"] is False
 
