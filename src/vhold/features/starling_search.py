@@ -13,6 +13,7 @@ The STARLING search database (~18.6GB) auto-downloads on first use.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 from vhold.features.disorder import (
     DisorderResult,
@@ -26,8 +27,9 @@ from vhold.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Module-level cache for SearchEngine (avoids reloading ~18.6GB index)
-_cached_engine: object | None = None
+# Module-level cache for SearchEngine (avoids reloading ~18.6GB index).
+# Not thread-safe; acceptable for single-threaded pipeline.
+_cached_engine: Any = None
 
 
 @dataclass
@@ -80,7 +82,7 @@ def _distance_to_similarity(distance: float) -> float:
     return max(0.0, min(1.0, similarity))
 
 
-def _get_search_engine() -> object:
+def _get_search_engine() -> Any:
     """Get or create the cached STARLING SearchEngine.
 
     Caches the engine at module level to avoid reloading the ~18.6GB

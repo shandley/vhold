@@ -628,7 +628,7 @@ class TestUniProtCache:
 
 
 # ============================================================================
-# UniProt API improvements (retry, POST, User-Agent)
+# UniProt API improvements (retry, GET, User-Agent)
 # ============================================================================
 
 
@@ -643,8 +643,8 @@ class TestUniProtAPIConfig:
         assert RETRY_BACKOFF_BASE > 0
 
     @patch("vhold.features.uniprot_lookup.urllib.request.urlopen")
-    def test_post_request_used(self, mock_urlopen):
-        """Verify _fetch_uniprot_batch uses POST, not GET."""
+    def test_get_request_used(self, mock_urlopen):
+        """Verify _fetch_uniprot_batch uses GET (UniProt search is GET-only)."""
         from vhold.features.uniprot_lookup import _fetch_uniprot_batch
 
         mock_response = MagicMock()
@@ -655,12 +655,12 @@ class TestUniProtAPIConfig:
 
         _fetch_uniprot_batch(["Q9BYF1"])
 
-        # Verify the request was a POST
+        # Verify the request is GET (no data = GET)
         call_args = mock_urlopen.call_args
         req = call_args[0][0]
-        assert req.method == "POST"
-        assert req.data is not None
-        assert b"query=" in req.data
+        assert req.data is None
+        assert "query=" in req.full_url
+        assert "accession%3AQ9BYF1" in req.full_url
 
     @patch("vhold.features.uniprot_lookup.urllib.request.urlopen")
     def test_user_agent_header(self, mock_urlopen):
@@ -726,6 +726,118 @@ class TestUniProtAPIConfig:
         mock_sleep.assert_called_once()
         assert mock_urlopen.call_count == 2
 
+    @patch("vhold.features.uniprot_lookup.time.sleep")
+    @patch("vhold.features.uniprot_lookup.urllib.request.urlopen")
+    def test_429_exhausted_returns_empty(self, mock_urlopen, mock_sleep):
+        """All retries returning 429 should return empty results, not raise."""
+        import urllib.error
+
+        from vhold.features.uniprot_lookup import _fetch_uniprot_batch
+
+        error_429 = urllib.error.HTTPError(
+            "url", 429, "Too Many Requests", {}, None,
+        )
+        mock_urlopen.side_effect = [error_429] * MAX_RETRIES
+
+        result = _fetch_uniprot_batch(["Q9BYF1"])
+
+        assert result == {}
+        assert mock_urlopen.call_count == MAX_RETRIES
+
+    @patch("vhold.features.uniprot_lookup.time.sleep")
+    @patch("vhold.features.uniprot_lookup.urllib.request.urlopen")
+    def test_429_no_retry_after_uses_backoff(self, mock_urlopen, mock_sleep):
+        """429 without Retry-After header should use exponential backoff."""
+        import urllib.error
+
+        from vhold.features.uniprot_lookup import _fetch_uniprot_batch
+
+        error_429 = urllib.error.HTTPError(
+            "url", 429, "Too Many Requests", {}, None,
+        )
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"results": []}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        mock_urlopen.side_effect = [error_429, mock_response]
+
+        _fetch_uniprot_batch(["Q9BYF1"])
+
+        # Without Retry-After, should use RETRY_BACKOFF_BASE * 2^0 = 1.0
+        mock_sleep.assert_called_once_with(RETRY_BACKOFF_BASE)
+
+    @patch("vhold.features.uniprot_lookup.time.sleep")
+    @patch("vhold.features.uniprot_lookup.urllib.request.urlopen")
+    def test_timeout_then_success(self, mock_urlopen, mock_sleep):
+        """Timeout followed by success should return results."""
+        from vhold.features.uniprot_lookup import _fetch_uniprot_batch
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"results": [{"primaryAccession": "Q9BYF1"}]}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        mock_urlopen.side_effect = [TimeoutError("timed out"), mock_response]
+
+        result = _fetch_uniprot_batch(["Q9BYF1"])
+
+        assert "Q9BYF1" in result
+        assert mock_urlopen.call_count == 2
+
+
+# ============================================================================
+# Retry-After header parsing
+# ============================================================================
+
+
+class TestParseRetryAfter:
+    """Test Retry-After header parsing."""
+
+    def test_numeric_seconds(self):
+        from vhold.features.uniprot_lookup import _parse_retry_after
+        assert _parse_retry_after("120", attempt=0) == 120.0
+
+    def test_http_date_falls_back(self):
+        """HTTP-date format should fall back to exponential backoff."""
+        from vhold.features.uniprot_lookup import _parse_retry_after
+        result = _parse_retry_after("Fri, 31 Dec 1999 23:59:59 GMT", attempt=1)
+        assert result == RETRY_BACKOFF_BASE * 2  # 2^1
+
+    def test_none_falls_back(self):
+        from vhold.features.uniprot_lookup import _parse_retry_after
+        result = _parse_retry_after(None, attempt=2)
+        assert result == RETRY_BACKOFF_BASE * 4  # 2^2
+
+
+# ============================================================================
+# Corrupt cache handling
+# ============================================================================
+
+
+class TestCorruptCache:
+    """Test cache resilience to corruption."""
+
+    def test_load_corrupt_json(self, tmp_path):
+        """Corrupt JSON should return empty dict, not crash."""
+        from vhold.features.uniprot_lookup import load_lookup_cache
+
+        cache_path = tmp_path / "corrupt.json"
+        cache_path.write_text('{"truncated": ')
+        loaded = load_lookup_cache(cache_path)
+        assert loaded == {}
+
+    def test_atomic_save(self, tmp_path):
+        """save_lookup_cache should produce valid JSON."""
+        from vhold.features.uniprot_lookup import load_lookup_cache, save_lookup_cache
+
+        cache = {"ACC1": {"description": "test"}}
+        cache_path = tmp_path / "cache.json"
+        save_lookup_cache(cache, cache_path)
+
+        loaded = load_lookup_cache(cache_path)
+        assert loaded == cache
+
 
 # ============================================================================
 # SearchEngine module-level cache
@@ -740,31 +852,33 @@ class TestSearchEngineCache:
         import vhold.features.starling_search as ss
 
         # Reset cache
+        original = ss._cached_engine
         ss._cached_engine = None
 
         mock_engine = MagicMock()
         mock_se_cls = MagicMock()
         mock_se_cls.load.return_value = mock_engine
 
-        with patch.dict(
-            "sys.modules",
-            {
-                "starling": MagicMock(),
-                "starling.search": MagicMock(),
-                "starling.search.search_engine": MagicMock(),
-            },
-        ):
-            sys.modules["starling.search.search_engine"].SearchEngine = mock_se_cls
+        try:
+            with patch.dict(
+                "sys.modules",
+                {
+                    "starling": MagicMock(),
+                    "starling.search": MagicMock(),
+                    "starling.search.search_engine": MagicMock(),
+                },
+            ):
+                sys.modules["starling.search.search_engine"].SearchEngine = mock_se_cls
 
-            engine1 = ss._get_search_engine()
-            engine2 = ss._get_search_engine()
+                engine1 = ss._get_search_engine()
+                engine2 = ss._get_search_engine()
 
-            # Should only call load once
-            mock_se_cls.load.assert_called_once()
-            assert engine1 is engine2
-
-        # Clean up
-        ss._cached_engine = None
+                # Should only call load once
+                mock_se_cls.load.assert_called_once()
+                assert engine1 is engine2
+        finally:
+            # Always clean up
+            ss._cached_engine = original
 
 
 # ============================================================================

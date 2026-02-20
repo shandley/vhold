@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -106,10 +107,30 @@ def lookup_uniprot_batch(
     return {acc: cache[acc] for acc in accessions if acc in cache}
 
 
-def _fetch_uniprot_batch(accessions: list[str]) -> dict[str, dict]:
-    """Fetch a single batch of UniProt annotations via POST.
+def _parse_retry_after(header_value: str | None, attempt: int) -> float:
+    """Parse Retry-After header to a wait time in seconds.
 
-    Uses POST to avoid URL length limits with large batches.
+    Handles both delay-seconds ("120") and HTTP-date formats per RFC 9110.
+    Falls back to exponential backoff if unparseable.
+
+    Args:
+        header_value: Raw Retry-After header value (or None)
+        attempt: Current retry attempt (0-indexed) for backoff calculation
+
+    Returns:
+        Wait time in seconds
+    """
+    if header_value is not None:
+        try:
+            return float(header_value)
+        except (ValueError, TypeError):
+            pass
+    return RETRY_BACKOFF_BASE * (2 ** attempt)
+
+
+def _fetch_uniprot_batch(accessions: list[str]) -> dict[str, dict]:
+    """Fetch a single batch of UniProt annotations via GET.
+
     Retries with exponential backoff on transient errors (429, 503).
 
     Args:
@@ -120,23 +141,20 @@ def _fetch_uniprot_batch(accessions: list[str]) -> dict[str, dict]:
     """
     fields_param = ",".join(UNIPROT_FIELDS)
     query = " OR ".join(f"accession:{acc}" for acc in accessions)
-    url = f"{UNIPROT_API_BASE}/uniprotkb/search"
-
-    # POST body avoids URL length overflow for large batches
-    post_data = urllib.parse.urlencode({
-        "query": query,
-        "fields": fields_param,
-        "format": "json",
-        "size": str(len(accessions)),
-    }).encode("utf-8")
+    url = (
+        f"{UNIPROT_API_BASE}/uniprotkb/search"
+        f"?query={urllib.parse.quote(query)}"
+        f"&fields={fields_param}"
+        f"&format=json"
+        f"&size={len(accessions)}"
+    )
 
     results: dict[str, dict] = {}
 
     for attempt in range(MAX_RETRIES):
         try:
-            req = urllib.request.Request(url, data=post_data, method="POST")
+            req = urllib.request.Request(url)
             req.add_header("Accept", "application/json")
-            req.add_header("Content-Type", "application/x-www-form-urlencoded")
             req.add_header("User-Agent", USER_AGENT)
 
             with urllib.request.urlopen(req, timeout=30) as response:
@@ -150,15 +168,14 @@ def _fetch_uniprot_batch(accessions: list[str]) -> dict[str, dict]:
             return results
 
         except urllib.error.HTTPError as e:
-            if e.code == 429:
-                # Rate limited — honor Retry-After header
-                retry_after = e.headers.get("Retry-After")
-                wait = float(retry_after) if retry_after else RETRY_BACKOFF_BASE * (2 ** attempt)
-                logger.warning(f"UniProt rate limited (429), retrying in {wait:.1f}s...")
-                time.sleep(wait)
-            elif e.code == 503 and attempt < MAX_RETRIES - 1:
-                wait = RETRY_BACKOFF_BASE * (2 ** attempt)
-                logger.warning(f"UniProt unavailable (503), retrying in {wait:.1f}s...")
+            if e.code in (429, 503) and attempt < MAX_RETRIES - 1:
+                wait = _parse_retry_after(
+                    e.headers.get("Retry-After") if e.code == 429 else None,
+                    attempt,
+                )
+                logger.warning(
+                    f"UniProt API error ({e.code}), retrying in {wait:.1f}s..."
+                )
                 time.sleep(wait)
             else:
                 logger.warning(f"UniProt API request failed: {e}")
@@ -262,17 +279,31 @@ def save_lookup_cache(
 ) -> None:
     """Save UniProt lookup cache to JSON file.
 
+    Uses atomic write (temp file + rename) to prevent corruption
+    if the process is interrupted mid-write.
+
     Args:
         cache: Cache dict mapping accession to annotation
         output_path: Path to write JSON file
     """
-    with open(output_path, "w") as f:
-        json.dump(cache, f, indent=2)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        dir=output_path.parent, suffix=".json.tmp",
+    )
+    try:
+        with open(fd, "w") as f:
+            json.dump(cache, f, indent=2)
+        Path(tmp_path).replace(output_path)
+    except BaseException:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
     logger.info(f"Saved UniProt cache ({len(cache)} entries) to {output_path}")
 
 
 def load_lookup_cache(cache_path: Path) -> dict[str, dict]:
     """Load UniProt lookup cache from JSON file.
+
+    Handles corrupt/truncated cache files gracefully by starting fresh.
 
     Args:
         cache_path: Path to JSON cache file
@@ -283,7 +314,11 @@ def load_lookup_cache(cache_path: Path) -> dict[str, dict]:
     if not cache_path.exists():
         return {}
 
-    with open(cache_path) as f:
-        cache = json.load(f)
-    logger.info(f"Loaded UniProt cache ({len(cache)} entries) from {cache_path}")
-    return cache
+    try:
+        with open(cache_path) as f:
+            cache = json.load(f)
+        logger.info(f"Loaded UniProt cache ({len(cache)} entries) from {cache_path}")
+        return cache
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"Corrupt UniProt cache at {cache_path}, starting fresh: {e}")
+        return {}
