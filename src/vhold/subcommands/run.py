@@ -95,6 +95,7 @@ def run_pipeline(
         "triage_threshold": triage_threshold,
         "disorder": disorder,
         "disorder_threshold": disorder_threshold,
+        "disorder_classifier_confidence": disorder_classifier_confidence,
     }
 
     # ========================================
@@ -516,43 +517,46 @@ def run_pipeline(
                     classify_disordered_proteins,
                 )
 
-                # Extract STARLING embeddings for disordered unknowns
-                disordered_seqs = {
-                    sid: seq_dict[sid] for sid in disordered_unknown_ids
-                    if sid in seq_dict
-                }
-                ids, starling_embeddings = extract_starling_embeddings(
-                    disordered_seqs,
-                    disorder_results=disorder_results,
-                    aggregate=True,
-                    device=device if device != "auto" else None,
-                )
-
-                disorder_clf = load_disorder_classifier(
-                    model_dir=Path(model_dir) if model_dir else None,
-                )
-
-                if disorder_clf is not None:
-                    predictions = classify_disordered_proteins(
-                        starling_embeddings, ids, disorder_clf,
-                        confidence_threshold=disorder_classifier_confidence,
+                try:
+                    # Extract STARLING embeddings for disordered unknowns
+                    disordered_seqs = {
+                        sid: seq_dict[sid] for sid in disordered_unknown_ids
+                        if sid in seq_dict
+                    }
+                    ids, starling_embeddings = extract_starling_embeddings(
+                        disordered_seqs,
+                        disorder_results=disorder_results,
+                        aggregate=True,
+                        device=device if device != "auto" else None,
                     )
 
-                    reclassified = 0
-                    for pid, (category, confidence) in predictions.items():
-                        if pid in annotations:
-                            annotations[pid].functional_category = category
-                            annotations[pid].classification_source = "disorder_classifier"
-                            reclassified += 1
-                            logger.info(
-                                f"  {pid}: unknown -> {category} "
-                                f"(disorder confidence: {confidence:.3f})"
-                            )
-
-                    logger.info(
-                        f"Disorder classifier: {reclassified}/{len(disordered_unknown_ids)} "
-                        f"disordered proteins reclassified"
+                    disorder_clf = load_disorder_classifier(
+                        model_dir=Path(model_dir) if model_dir else None,
                     )
+
+                    if disorder_clf is not None:
+                        predictions = classify_disordered_proteins(
+                            starling_embeddings, ids, disorder_clf,
+                            confidence_threshold=disorder_classifier_confidence,
+                        )
+
+                        reclassified = 0
+                        for pid, (category, confidence) in predictions.items():
+                            if pid in annotations:
+                                annotations[pid].functional_category = category
+                                annotations[pid].classification_source = "disorder_classifier"
+                                reclassified += 1
+                                logger.info(
+                                    f"  {pid}: unknown -> {category} "
+                                    f"(disorder confidence: {confidence:.3f})"
+                                )
+
+                        logger.info(
+                            f"Disorder classifier: {reclassified}/{len(disordered_unknown_ids)} "
+                            f"disordered proteins reclassified"
+                        )
+                except Exception as e:
+                    logger.warning(f"STARLING disorder classification failed: {e}")
                 logger.info("")
 
     # ========================================

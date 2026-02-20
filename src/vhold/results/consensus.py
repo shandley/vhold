@@ -128,7 +128,7 @@ class ConsensusResult:
 
     # Disorder prediction (from metapredict, populated in Step 4a.2)
     disorder_fraction: float | None = None
-    disorder_regions: list | None = None
+    disorder_regions: list[tuple[int, int]] | None = None
     disorder_class: str | None = None  # "ordered", "partially_disordered", "highly_disordered"
 
     # All hits by database

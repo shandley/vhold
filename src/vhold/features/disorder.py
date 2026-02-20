@@ -61,7 +61,7 @@ def check_metapredict_available() -> bool:
 def check_starling_available() -> bool:
     """Check if STARLING is installed."""
     try:
-        from starling import sequence_encoder  # noqa: F401
+        import starling  # noqa: F401
 
         return True
     except ImportError:

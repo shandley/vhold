@@ -91,20 +91,6 @@ class DarkMatterReport:
                 },
                 "by_confidence": self.by_confidence,
                 "length_stats": self.length_stats,
-                "by_disorder_class": {
-                    "highly_disordered": sum(
-                        1 for p in self.proteins if p.disorder_class == "highly_disordered"
-                    ),
-                    "partially_disordered": sum(
-                        1 for p in self.proteins if p.disorder_class == "partially_disordered"
-                    ),
-                    "ordered": sum(
-                        1 for p in self.proteins if p.disorder_class == "ordered"
-                    ),
-                    "unknown": sum(
-                        1 for p in self.proteins if p.disorder_class is None
-                    ),
-                },
             },
             "proteins": [
                 {
@@ -118,11 +104,28 @@ class DarkMatterReport:
                     "description": p.description,
                     "databases_with_hits": p.databases_with_hits,
                     "disorder_class": p.disorder_class,
-                    "disorder_fraction": p.disorder_fraction,
+                    "disorder_fraction": round(p.disorder_fraction, 3) if p.disorder_fraction is not None else None,
                 }
                 for p in self.proteins
             ],
         }
+
+        # Add disorder breakdown only when disorder data is present
+        if any(p.disorder_class is not None for p in self.proteins):
+            result["summary"]["by_disorder_class"] = {
+                "highly_disordered": sum(
+                    1 for p in self.proteins if p.disorder_class == "highly_disordered"
+                ),
+                "partially_disordered": sum(
+                    1 for p in self.proteins if p.disorder_class == "partially_disordered"
+                ),
+                "ordered": sum(
+                    1 for p in self.proteins if p.disorder_class == "ordered"
+                ),
+                "unknown": sum(
+                    1 for p in self.proteins if p.disorder_class is None
+                ),
+            }
 
         # Add metagenomic characterizations if available
         if self.metagenomic_characterizations:
