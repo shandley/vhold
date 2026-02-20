@@ -5,7 +5,7 @@ against the 35M UniRef50 IDR database. Queries the UniProt REST API for
 protein names, gene names, GO terms, Pfam domains, and organism info.
 
 Requires network access for live lookups. Results are cached in-memory
-within a pipeline run.
+within a pipeline run and optionally persisted to disk across runs.
 """
 
 from __future__ import annotations
@@ -13,6 +13,9 @@ from __future__ import annotations
 import json
 import re
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 from vhold.utils.constants import UNIPROT_BATCH_SIZE
@@ -22,6 +25,13 @@ logger = get_logger(__name__)
 
 # UniProt REST API endpoint
 UNIPROT_API_BASE = "https://rest.uniprot.org"
+
+# User-Agent for API requests (UniProt requests identification)
+USER_AGENT = "vHold/1.0 (https://github.com/shandley/vhold)"
+
+# Retry configuration
+MAX_RETRIES = 3
+RETRY_BACKOFF_BASE = 1.0  # seconds: 1, 2, 4
 
 # Fields to request from UniProt
 UNIPROT_FIELDS = [
@@ -97,7 +107,10 @@ def lookup_uniprot_batch(
 
 
 def _fetch_uniprot_batch(accessions: list[str]) -> dict[str, dict]:
-    """Fetch a single batch of UniProt annotations.
+    """Fetch a single batch of UniProt annotations via POST.
+
+    Uses POST to avoid URL length limits with large batches.
+    Retries with exponential backoff on transient errors (429, 503).
 
     Args:
         accessions: List of accessions (max UNIPROT_BATCH_SIZE)
@@ -105,37 +118,61 @@ def _fetch_uniprot_batch(accessions: list[str]) -> dict[str, dict]:
     Returns:
         Dict mapping accession to parsed annotation
     """
-    import urllib.error
-    import urllib.request
-
     fields_param = ",".join(UNIPROT_FIELDS)
     query = " OR ".join(f"accession:{acc}" for acc in accessions)
-    url = (
-        f"{UNIPROT_API_BASE}/uniprotkb/search"
-        f"?query={urllib.request.quote(query)}"
-        f"&fields={fields_param}"
-        f"&format=json"
-        f"&size={len(accessions)}"
-    )
+    url = f"{UNIPROT_API_BASE}/uniprotkb/search"
+
+    # POST body avoids URL length overflow for large batches
+    post_data = urllib.parse.urlencode({
+        "query": query,
+        "fields": fields_param,
+        "format": "json",
+        "size": str(len(accessions)),
+    }).encode("utf-8")
 
     results: dict[str, dict] = {}
 
-    try:
-        req = urllib.request.Request(url)
-        req.add_header("Accept", "application/json")
+    for attempt in range(MAX_RETRIES):
+        try:
+            req = urllib.request.Request(url, data=post_data, method="POST")
+            req.add_header("Accept", "application/json")
+            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+            req.add_header("User-Agent", USER_AGENT)
 
-        with urllib.request.urlopen(req, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            with urllib.request.urlopen(req, timeout=30) as response:
+                data = json.loads(response.read().decode("utf-8"))
 
-        for entry in data.get("results", []):
-            acc = entry.get("primaryAccession", "")
-            if acc:
-                results[acc] = _parse_uniprot_entry(entry)
+            for entry in data.get("results", []):
+                acc = entry.get("primaryAccession", "")
+                if acc:
+                    results[acc] = _parse_uniprot_entry(entry)
 
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
-        logger.warning(f"UniProt API request failed: {e}")
-    except (json.JSONDecodeError, KeyError) as e:
-        logger.warning(f"UniProt API response parsing failed: {e}")
+            return results
+
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                # Rate limited — honor Retry-After header
+                retry_after = e.headers.get("Retry-After")
+                wait = float(retry_after) if retry_after else RETRY_BACKOFF_BASE * (2 ** attempt)
+                logger.warning(f"UniProt rate limited (429), retrying in {wait:.1f}s...")
+                time.sleep(wait)
+            elif e.code == 503 and attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF_BASE * (2 ** attempt)
+                logger.warning(f"UniProt unavailable (503), retrying in {wait:.1f}s...")
+                time.sleep(wait)
+            else:
+                logger.warning(f"UniProt API request failed: {e}")
+                return results
+        except (urllib.error.URLError, TimeoutError) as e:
+            if attempt < MAX_RETRIES - 1:
+                wait = RETRY_BACKOFF_BASE * (2 ** attempt)
+                logger.warning(f"UniProt request failed, retrying in {wait:.1f}s: {e}")
+                time.sleep(wait)
+            else:
+                logger.warning(f"UniProt API request failed after {MAX_RETRIES} attempts: {e}")
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"UniProt API response parsing failed: {e}")
+            return results
 
     return results
 

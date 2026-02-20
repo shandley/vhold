@@ -26,6 +26,9 @@ from vhold.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Module-level cache for SearchEngine (avoids reloading ~18.6GB index)
+_cached_engine: object | None = None
+
 
 @dataclass
 class StarlingMatch:
@@ -77,6 +80,24 @@ def _distance_to_similarity(distance: float) -> float:
     return max(0.0, min(1.0, similarity))
 
 
+def _get_search_engine() -> object:
+    """Get or create the cached STARLING SearchEngine.
+
+    Caches the engine at module level to avoid reloading the ~18.6GB
+    FAISS index on repeated calls.
+
+    Returns:
+        SearchEngine instance
+    """
+    global _cached_engine
+    if _cached_engine is None:
+        from starling.search.search_engine import SearchEngine
+
+        logger.info("Loading STARLING search engine...")
+        _cached_engine = SearchEngine.load("default")
+    return _cached_engine
+
+
 def search_starling_database(
     sequences: dict[str, str],
     disorder_results: dict[str, DisorderResult] | None = None,
@@ -100,7 +121,6 @@ def search_starling_database(
         return StarlingSearchResult()
 
     from starling import sequence_encoder
-    from starling.search.search_engine import SearchEngine
 
     result = StarlingSearchResult(total_queries=len(sequences))
 
@@ -137,9 +157,8 @@ def search_starling_database(
     norms = torch.where(norms > 0, norms, torch.ones_like(norms))
     query_tensor = query_tensor / norms
 
-    # Load search engine (auto-downloads database on first use)
-    logger.info("Loading STARLING search engine...")
-    engine = SearchEngine.load("default")
+    # Load search engine (cached at module level)
+    engine = _get_search_engine()
 
     # Search
     logger.info(f"Searching {len(ids)} queries against ~35M IDR sequences (k={k})...")
@@ -202,7 +221,7 @@ def build_starling_consensus_results(
         extract_uniprot_accession,
         lookup_uniprot_batch,
     )
-    from vhold.results.categories import AnnotationEvidence, classify_protein
+    from vhold.results.categories import AnnotationEvidence, get_classification_source
     from vhold.results.consensus import ConsensusResult
 
     if uniprot_cache is None:
@@ -259,14 +278,16 @@ def build_starling_consensus_results(
                 skipped_ids.append(query_id)
                 continue
 
-        # Classify using all available evidence
+        # Classify using all available evidence, tracking source
         gene = annotation.get("gene")
         evidence = AnnotationEvidence(
             pfam=annotation.get("pfam"),
             go_bp=annotation.get("go_bp"),
             go_mf=annotation.get("go_mf"),
         )
-        category = classify_protein(description, gene, evidence=evidence)
+        category, evidence_source = get_classification_source(
+            description, gene, evidence=evidence,
+        )
 
         # Map similarity to consensus score
         consensus_score = min(1.0, best_match.similarity * 0.95 + 0.05)
@@ -289,7 +310,7 @@ def build_starling_consensus_results(
             confidence_level=confidence,
             agreement="single",
             functional_category=category,
-            classification_source="starling_search",
+            classification_source=f"starling_search:{evidence_source}",
             novelty="ensemble_match",
             structure_quality_score=1.0,
             structure_quality_source="none",

@@ -43,7 +43,7 @@ def run_pipeline(
     disorder: bool = False,
     disorder_threshold: float = 0.5,
     disorder_classifier_confidence: float = 0.5,
-    starling_search: bool = False,
+    use_starling_search: bool = False,
     starling_similarity_threshold: float = 0.7,
 ) -> None:
     """Run the full vhold annotation pipeline.
@@ -98,7 +98,7 @@ def run_pipeline(
         "disorder": disorder,
         "disorder_threshold": disorder_threshold,
         "disorder_classifier_confidence": disorder_classifier_confidence,
-        "starling_search": starling_search,
+        "starling_search": use_starling_search,
         "starling_similarity_threshold": starling_similarity_threshold,
     }
 
@@ -495,7 +495,7 @@ def run_pipeline(
     # ========================================
     # Step 4a.6: STARLING similarity search (disordered unknowns)
     # ========================================
-    if starling_search and disorder and disorder_results:
+    if use_starling_search and disorder and disorder_results:
         from vhold.features.starling_search import check_starling_search_available
 
         if check_starling_search_available():
@@ -516,8 +516,16 @@ def run_pipeline(
                     build_starling_consensus_results,
                     search_starling_database,
                 )
+                from vhold.features.uniprot_lookup import (
+                    load_lookup_cache,
+                    save_lookup_cache,
+                )
 
                 try:
+                    # Load persistent UniProt cache
+                    cache_path = output_path / "uniprot_cache.json"
+                    uniprot_cache = load_lookup_cache(cache_path)
+
                     disordered_seqs = {
                         sid: seq_dict[sid] for sid in starling_search_ids
                         if sid in seq_dict
@@ -534,6 +542,7 @@ def run_pipeline(
                         starling_annotations, skipped = build_starling_consensus_results(
                             search_result.matched,
                             query_lengths=seq_lengths,
+                            uniprot_cache=uniprot_cache,
                         )
 
                         # Merge: update existing annotations with STARLING results
@@ -560,6 +569,11 @@ def run_pipeline(
                             f"STARLING search: {starling_reclassified}/{len(starling_search_ids)} "
                             f"disordered proteins annotated via ensemble similarity"
                         )
+
+                    # Persist UniProt cache for future runs
+                    if uniprot_cache:
+                        save_lookup_cache(uniprot_cache, cache_path)
+
                 except Exception as e:
                     logger.warning(f"STARLING similarity search failed: {e}")
                 logger.info("")

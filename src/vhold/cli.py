@@ -65,7 +65,7 @@ def main():
     "--all-models",
     is_flag=True,
     default=False,
-    help="Download all optional models (embeddings + classifier + disorder classifier)",
+    help="Download all optional models (embeddings + classifier + disorder classifier). Does not include STARLING DB; use --starling-db separately.",
 )
 def install(database, bfvd, viro3d, force, embeddings, classifier, disorder_classifier, starling_db, all_models):
     """Download and install reference databases.
@@ -379,7 +379,7 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
 )
 @click.option(
     "--starling-search/--no-starling-search",
-    "starling_search",
+    "use_starling_search",
     default=None,
     help="Search STARLING IDR database for disordered unknowns (auto-enabled when available)",
 )
@@ -415,7 +415,7 @@ def run(
     fast, llm_classify, llm_model, triage, triage_threshold,
     classify, classifier_confidence, backend, lora,
     disorder, disorder_threshold, disorder_classifier_confidence,
-    starling_search, starling_similarity_threshold,
+    use_starling_search, starling_similarity_threshold,
     input_format, genome_fasta, export_formats,
 ):
     """Run the full vhold annotation pipeline.
@@ -457,10 +457,10 @@ def run(
             )
 
     # Auto-detect STARLING search availability (requires disorder to be enabled)
-    if starling_search is None and disorder:
+    if use_starling_search is None and disorder:
         from vhold.features.starling_search import check_starling_search_available
-        starling_search = check_starling_search_available()
-        if starling_search:
+        use_starling_search = check_starling_search_available()
+        if use_starling_search:
             click.echo(
                 "STARLING similarity search auto-enabled (SearchEngine detected). "
                 "Use --no-starling-search to disable."
@@ -492,7 +492,7 @@ def run(
         disorder=disorder,
         disorder_threshold=disorder_threshold,
         disorder_classifier_confidence=disorder_classifier_confidence,
-        starling_search=bool(starling_search),
+        use_starling_search=bool(use_starling_search),
         starling_similarity_threshold=starling_similarity_threshold,
         input_format=input_format,
         genome_fasta=genome_fasta,

@@ -1,6 +1,6 @@
 # vHold Project State - Claude Code Context
 
-Last updated: 2026-02-17
+Last updated: 2026-02-20
 
 ## Project Overview
 
@@ -26,7 +26,10 @@ vHold Pipeline:
 3. Search BFVD + Viro3D with Foldseek
 4. Transfer annotations with multi-database consensus scoring
 4a. Merge triage results with structural search results
+4a.2. (Auto) Disorder annotation via metapredict (--disorder/--no-disorder, auto-enabled)
 4a.5. (Auto) MLP classifier: reclassify "unknown" proteins using trained embedding classifier
+4a.6. (Auto) STARLING similarity search: search 35M UniRef50 IDRs for disordered unknowns
+4a.7. (Auto) Disorder classifier: STARLING embeddings MLP for remaining disordered unknowns
 4b. (Auto) LLM reclassification of unknown proteins (--llm/--no-llm, auto-enabled with API key)
 4c. (Auto) Neighborhood voting: gene-order-based reclassification (GenBank/GFF input only)
 5. Generate output: TSV (with GO IDs), summary JSON, dark matter report
@@ -44,6 +47,10 @@ vHold Pipeline:
 | `src/vhold/features/foldseek.py` | Structural search against BFVD/Viro3D + `create_query_db()` |
 | `src/vhold/features/foldmason.py` | FoldMason MSA wrapper (`run_foldmason_msa()`) |
 | `src/vhold/features/classifier.py` | MLP functional classifier (model definition + batch inference) |
+| `src/vhold/features/disorder.py` | Disorder prediction (metapredict) + STARLING embeddings |
+| `src/vhold/features/disorder_classifier.py` | Disorder-aware MLP classifier (STARLING 512-dim inputs) |
+| `src/vhold/features/starling_search.py` | STARLING FAISS similarity search + consensus building |
+| `src/vhold/features/uniprot_lookup.py` | UniProt REST API client for resolving UniRef50 hits |
 | `src/vhold/features/onnx_export.py` | ONNX INT8 export + quantization |
 | `src/vhold/features/onnx_predictor.py` | ONNX ProstT5 predictor (OnnxProstT5Predictor) |
 | `src/vhold/features/onnx_embeddings.py` | ONNX embedding extractor (OnnxEmbeddingExtractor) |
@@ -55,6 +62,7 @@ vHold Pipeline:
 | `src/vhold/databases/embeddings.py` | Embedding DB path/install (Zenodo record 18652045) |
 | `src/vhold/databases/classifier.py` | Classifier checkpoint path management |
 | `src/vhold/databases/lora.py` | LoRA adapter path management |
+| `src/vhold/databases/disorder_classifier.py` | Disorder classifier checkpoint path management |
 | `src/vhold/results/annotations.py` | Consensus annotation transfer |
 | `src/vhold/results/categories.py` | Keyword-based functional classification |
 | `src/vhold/results/go_terms.py` | GO term ID resolution (name→ID from bundled OBO map) |
@@ -71,7 +79,8 @@ vHold Pipeline:
 | `scripts/generate_llm_labels.py` | Batch LLM label generation for training data expansion |
 | `scripts/calibrate_triage_threshold.py` | Triage threshold calibration across 4 case studies |
 | `scripts/build_go_term_map.py` | Build GO term name→ID JSON from OBO file |
-| `tests/` | 658 tests (pytest) |
+| `scripts/train_disorder_classifier.py` | Disorder classifier training (STARLING embeddings) |
+| `tests/` | 748 tests (pytest) |
 
 ## Implemented Features
 
@@ -264,6 +273,27 @@ Export vHold results to formats compatible with the viral metagenomics ecosystem
 - GFF3: only includes proteins with genomic coordinates (from GenBank/GFF input)
 - No new dependencies (all formats are simple TSV/CSV/GFF3)
 
+### Intrinsic Disorder Prediction (`--disorder/--no-disorder`) -- COMPLETE
+
+Three-layer disorder integration for viral proteins poorly served by structural homology:
+
+**Layer 1: metapredict** (Step 4a.2) — Fast per-residue disorder scoring. Auto-enabled when metapredict is installed. Classifies proteins as ordered (<15%), partially_disordered (15-40%), or highly_disordered (>40%).
+
+**Layer 2: STARLING Similarity Search** (Step 4a.6) — Searches pre-built FAISS index of ~35M IDR sequences from UniRef50 for disordered unknowns. Resolves hits to functional annotations via UniProt REST API. Auto-enabled when STARLING SearchEngine is available.
+
+**Layer 3: Disorder Classifier** (Step 4a.7) — MLP trained on STARLING 512-dim embeddings for remaining disordered unknowns. Architecture: 512→256→128→11 with LayerNorm, ReLU, Dropout(0.3).
+
+| Component | Package | Install | Database Size |
+|-----------|---------|---------|--------------|
+| metapredict V3 | `vhold[disorder]` | auto | — |
+| STARLING embeddings | `vhold[starling]` | auto | — |
+| STARLING search DB | `vhold install --starling-db` | manual | ~18.6GB |
+| Disorder classifier | `vhold install --disorder-classifier` | manual | ~1MB |
+
+**ConsensusResult fields**: `disorder_fraction`, `disorder_regions`, `disorder_class` — propagated to TSV, summary JSON, and dark matter reports.
+
+**Novelty values**: `ensemble_match` (STARLING search), existing values unchanged.
+
 ### LLM Classification (`--llm/--no-llm`)
 - Post-processing step using Claude to reclassify proteins where keywords return "unknown"
 - **Auto-enabled** when `ANTHROPIC_API_KEY` is set; `--no-llm` to opt out
@@ -362,6 +392,10 @@ uv run vhold run -i input.fasta -o output/ --triage --no-lora
 # Disable MLP classifier (enabled by default when model installed)
 uv run vhold run -i input.fasta -o output/ --no-classify
 
+# Disorder prediction (auto-enabled when metapredict installed)
+# Disable: --no-disorder; STARLING search: --no-starling-search
+uv run vhold run -i input.fasta -o output/ --disorder
+
 # ONNX backend for faster CPU inference
 uv run vhold export-onnx                              # one-time export
 uv run vhold run -i input.fasta -o output/ --backend onnx
@@ -387,6 +421,7 @@ uv run vhold run -i input.fasta -o output/ --export-format anvio --export-format
 
 # Database setup
 uv run vhold install
+uv run vhold install --starling-db  # STARLING search database (~18.6GB)
 
 # Run tests
 uv run pytest tests/ -v

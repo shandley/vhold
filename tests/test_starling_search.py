@@ -16,6 +16,9 @@ from vhold.features.starling_search import (
     check_starling_search_available,
 )
 from vhold.features.uniprot_lookup import (
+    MAX_RETRIES,
+    RETRY_BACKOFF_BASE,
+    USER_AGENT,
     _parse_uniprot_entry,
     extract_uniprot_accession,
 )
@@ -475,7 +478,7 @@ class TestBuildStarlingConsensusResults:
 
         assert "prot1" in results
         r = results["prot1"]
-        assert r.classification_source == "starling_search"
+        assert r.classification_source.startswith("starling_search:")
         assert r.novelty == "ensemble_match"
         assert r.primary_source.startswith("starling_")
         assert r.consensus_score > 0.8
@@ -622,3 +625,198 @@ class TestUniProtCache:
 
         loaded = load_lookup_cache(tmp_path / "nonexistent.json")
         assert loaded == {}
+
+
+# ============================================================================
+# UniProt API improvements (retry, POST, User-Agent)
+# ============================================================================
+
+
+class TestUniProtAPIConfig:
+    """Test UniProt API configuration constants."""
+
+    def test_user_agent_set(self):
+        assert "vHold" in USER_AGENT
+
+    def test_retry_config(self):
+        assert MAX_RETRIES == 3
+        assert RETRY_BACKOFF_BASE > 0
+
+    @patch("vhold.features.uniprot_lookup.urllib.request.urlopen")
+    def test_post_request_used(self, mock_urlopen):
+        """Verify _fetch_uniprot_batch uses POST, not GET."""
+        from vhold.features.uniprot_lookup import _fetch_uniprot_batch
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"results": []}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        _fetch_uniprot_batch(["Q9BYF1"])
+
+        # Verify the request was a POST
+        call_args = mock_urlopen.call_args
+        req = call_args[0][0]
+        assert req.method == "POST"
+        assert req.data is not None
+        assert b"query=" in req.data
+
+    @patch("vhold.features.uniprot_lookup.urllib.request.urlopen")
+    def test_user_agent_header(self, mock_urlopen):
+        """Verify User-Agent header is set on requests."""
+        from vhold.features.uniprot_lookup import _fetch_uniprot_batch
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"results": []}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        _fetch_uniprot_batch(["Q9BYF1"])
+
+        req = mock_urlopen.call_args[0][0]
+        assert req.get_header("User-agent") == USER_AGENT
+
+    @patch("vhold.features.uniprot_lookup.time.sleep")
+    @patch("vhold.features.uniprot_lookup.urllib.request.urlopen")
+    def test_retry_on_429(self, mock_urlopen, mock_sleep):
+        """Test retry with backoff on HTTP 429."""
+        import urllib.error
+
+        from vhold.features.uniprot_lookup import _fetch_uniprot_batch
+
+        # First call: 429, second call: success
+        error_429 = urllib.error.HTTPError(
+            "url", 429, "Too Many Requests", {"Retry-After": "2"}, None,
+        )
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"results": []}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        mock_urlopen.side_effect = [error_429, mock_response]
+
+        _fetch_uniprot_batch(["Q9BYF1"])
+
+        # Should have retried after sleeping
+        mock_sleep.assert_called_once_with(2.0)
+        assert mock_urlopen.call_count == 2
+
+    @patch("vhold.features.uniprot_lookup.time.sleep")
+    @patch("vhold.features.uniprot_lookup.urllib.request.urlopen")
+    def test_retry_on_503(self, mock_urlopen, mock_sleep):
+        """Test retry with backoff on HTTP 503."""
+        import urllib.error
+
+        from vhold.features.uniprot_lookup import _fetch_uniprot_batch
+
+        error_503 = urllib.error.HTTPError(
+            "url", 503, "Service Unavailable", {}, None,
+        )
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'{"results": []}'
+        mock_response.__enter__ = MagicMock(return_value=mock_response)
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        mock_urlopen.side_effect = [error_503, mock_response]
+
+        _fetch_uniprot_batch(["Q9BYF1"])
+
+        mock_sleep.assert_called_once()
+        assert mock_urlopen.call_count == 2
+
+
+# ============================================================================
+# SearchEngine module-level cache
+# ============================================================================
+
+
+class TestSearchEngineCache:
+    """Test module-level SearchEngine caching."""
+
+    def test_engine_cached(self):
+        """Engine should be cached after first call."""
+        import vhold.features.starling_search as ss
+
+        # Reset cache
+        ss._cached_engine = None
+
+        mock_engine = MagicMock()
+        mock_se_cls = MagicMock()
+        mock_se_cls.load.return_value = mock_engine
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "starling": MagicMock(),
+                "starling.search": MagicMock(),
+                "starling.search.search_engine": MagicMock(),
+            },
+        ):
+            sys.modules["starling.search.search_engine"].SearchEngine = mock_se_cls
+
+            engine1 = ss._get_search_engine()
+            engine2 = ss._get_search_engine()
+
+            # Should only call load once
+            mock_se_cls.load.assert_called_once()
+            assert engine1 is engine2
+
+        # Clean up
+        ss._cached_engine = None
+
+
+# ============================================================================
+# Classification source tracking
+# ============================================================================
+
+
+class TestClassificationSourceTracking:
+    """Test that classification_source preserves evidence source."""
+
+    def test_pfam_source(self):
+        """Pfam-based classification should include pfam in source."""
+        matches = {
+            "prot1": [
+                StarlingMatch("prot1", "UniRef50_Q9BYF1", 0.3, 0.95, 200),
+            ],
+        }
+        cache = {
+            "Q9BYF1": {
+                "source": "uniprot",
+                "target_id": "Q9BYF1",
+                "description": "hypothetical protein",
+                "pfam": "PF00680:RdRP_1",
+            },
+        }
+
+        results, _ = build_starling_consensus_results(
+            matches, {"prot1": 150}, uniprot_cache=cache,
+        )
+
+        assert "prot1" in results
+        assert "starling_search:pfam:" in results["prot1"].classification_source
+
+    def test_keywords_source(self):
+        """Keyword-based classification should include keywords in source."""
+        matches = {
+            "prot1": [
+                StarlingMatch("prot1", "UniRef50_ABC", 0.3, 0.95, 200),
+            ],
+        }
+        cache = {
+            "ABC": {
+                "source": "uniprot",
+                "target_id": "ABC",
+                "description": "DNA polymerase",
+                "gene": "pol",
+            },
+        }
+
+        results, _ = build_starling_consensus_results(
+            matches, {"prot1": 150}, uniprot_cache=cache,
+        )
+
+        assert "prot1" in results
+        assert results["prot1"].classification_source == "starling_search:keywords"
