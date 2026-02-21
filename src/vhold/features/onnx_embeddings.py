@@ -47,8 +47,11 @@ class OnnxEmbeddingExtractor:
 
         encoder_path = self.model_dir / "encoder_model.onnx"
         if not encoder_path.exists():
+            # Check for quantized naming convention
+            encoder_path = self.model_dir / "encoder_model_quantized.onnx"
+        if not encoder_path.exists():
             raise FileNotFoundError(
-                f"ONNX encoder not found at {encoder_path}. "
+                f"ONNX encoder not found at {self.model_dir}. "
                 "Export first with: vhold export-onnx"
             )
 

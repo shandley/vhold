@@ -14,7 +14,6 @@ import shutil
 from pathlib import Path
 
 from vhold.utils.constants import (
-    ONNX_MODEL_DIR_NAME,
     PROSTT5_MODEL_NAME,
     get_model_dir,
     get_onnx_model_dir,
@@ -27,6 +26,12 @@ ONNX_FILES = [
     "encoder_model.onnx",
     "decoder_model.onnx",
     "decoder_with_past_model.onnx",
+]
+
+ONNX_QUANTIZED_FILES = [
+    "encoder_model_quantized.onnx",
+    "decoder_model_quantized.onnx",
+    "decoder_with_past_model_quantized.onnx",
 ]
 
 
@@ -44,7 +49,10 @@ def check_onnx_available() -> bool:
 def check_onnx_exported(model_dir: Path | None = None) -> bool:
     """Check if quantized ONNX models have been exported."""
     onnx_dir = model_dir or get_onnx_model_dir()
-    return all((onnx_dir / f).exists() for f in ONNX_FILES)
+    # Check for either standard or quantized naming convention
+    has_standard = all((onnx_dir / f).exists() for f in ONNX_FILES)
+    has_quantized = all((onnx_dir / f).exists() for f in ONNX_QUANTIZED_FILES)
+    return has_standard or has_quantized
 
 
 def _detect_quantization_target() -> str:
@@ -107,8 +115,10 @@ def export_and_quantize(
     fp32_dir = onnx_output / "_fp32_tmp"
     fp32_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Exporting ProstT5 to ONNX (this requires ~11 GB RAM)...")
+    logger.info("Exporting ProstT5 to ONNX (this requires ~11 GB RAM)...")
     logger.info(f"Model source: {PROSTT5_MODEL_NAME} (cache: {model_cache})")
+
+    from transformers import T5Tokenizer
 
     model = ORTModelForSeq2SeqLM.from_pretrained(
         PROSTT5_MODEL_NAME,
@@ -116,6 +126,15 @@ def export_and_quantize(
         cache_dir=model_cache,
     )
     model.save_pretrained(fp32_dir)
+
+    # Save tokenizer alongside ONNX models
+    tokenizer = T5Tokenizer.from_pretrained(
+        PROSTT5_MODEL_NAME,
+        cache_dir=model_cache,
+        do_lower_case=False,
+    )
+    tokenizer.save_pretrained(fp32_dir)
+
     logger.info(f"ONNX export saved to {fp32_dir}")
 
     # Step 2: Quantize each component
@@ -153,6 +172,14 @@ def export_and_quantize(
         logger.info(f"  Quantizing {onnx_file}...")
         quantizer = ORTQuantizer.from_pretrained(fp32_dir, file_name=onnx_file)
         quantizer.quantize(save_dir=onnx_output, quantization_config=dqconfig)
+
+    # Step 2b: Rename quantized files to standard names
+    for onnx_file in ONNX_FILES:
+        quantized_name = onnx_file.replace(".onnx", "_quantized.onnx")
+        if (onnx_output / quantized_name).exists() and not (
+            onnx_output / onnx_file
+        ).exists():
+            (onnx_output / quantized_name).rename(onnx_output / onnx_file)
 
     # Step 3: Copy config/tokenizer files
     for config_file in fp32_dir.iterdir():

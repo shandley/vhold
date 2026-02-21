@@ -1,6 +1,6 @@
 # vHold Project State - Claude Code Context
 
-Last updated: 2026-02-20
+Last updated: 2026-02-21
 
 ## Project Overview
 
@@ -14,6 +14,10 @@ Last updated: 2026-02-20
 
 ```
 vHold Pipeline:
+0. (Optional) Gene calling from nucleotide contigs (--gene-caller auto|pyrodigal)
+   - Pyrodigal-gv: ab initio viral ORF calling in metagenomic mode
+   - miniprot: splice-aware protein-to-genome alignment for eukaryotic viruses
+   - Merge: Pyrodigal primary, miniprot supplementary (non-overlapping spliced genes)
 1. Read input (FASTA, GenBank, or GFF3) — auto-detected by extension
    - GenBank/GFF: extracts proteins with genomic coordinates (contig, start, end, strand)
 1b. (Optional) Embedding triage: ProstT5 encoder cosine similarity against 436K references
@@ -51,6 +55,7 @@ vHold Pipeline:
 | `src/vhold/features/disorder_classifier.py` | Disorder-aware MLP classifier (STARLING 512-dim inputs) |
 | `src/vhold/features/starling_search.py` | STARLING FAISS similarity search + consensus building |
 | `src/vhold/features/uniprot_lookup.py` | UniProt REST API client for resolving UniRef50 hits |
+| `src/vhold/features/genecall.py` | Unified gene calling: Pyrodigal-gv + miniprot + merge logic |
 | `src/vhold/features/onnx_export.py` | ONNX INT8 export + quantization |
 | `src/vhold/features/onnx_predictor.py` | ONNX ProstT5 predictor (OnnxProstT5Predictor) |
 | `src/vhold/features/onnx_embeddings.py` | ONNX embedding extractor (OnnxEmbeddingExtractor) |
@@ -71,6 +76,8 @@ vHold Pipeline:
 | `src/vhold/utils/constants.py` | Thresholds, DB URLs, embedding config |
 | `src/vhold/io/genbank.py` | GenBank CDS feature extraction with coordinates |
 | `src/vhold/io/gff.py` | GFF3 parsing with embedded ##FASTA support |
+| `src/vhold/io/nucleotide.py` | Nucleotide FASTA detection and reading |
+| `src/vhold/databases/miniprot_refs.py` | Bundled miniprot reference DB path management |
 | `src/vhold/cli.py` | Click CLI (run, predict, compare, install, align, export, export-onnx) |
 | `scripts/train_contrastive.py` | Contrastive LoRA training (SupCon-Hard + multi-granularity) |
 | `scripts/evaluate_contrastive.py` | Before/after evaluation (MAP@k, NDCG, silhouette) |
@@ -80,7 +87,7 @@ vHold Pipeline:
 | `scripts/calibrate_triage_threshold.py` | Triage threshold calibration across 4 case studies |
 | `scripts/build_go_term_map.py` | Build GO term name→ID JSON from OBO file |
 | `scripts/train_disorder_classifier.py` | Disorder classifier training (STARLING embeddings) |
-| `tests/` | 771 tests (pytest) |
+| `tests/` | 854+ tests (pytest) |
 
 ## Implemented Features
 
@@ -91,6 +98,32 @@ vHold Pipeline:
 - Functional classification via Pfam, GO, SUPERFAMILY, and keyword matching
 - Dark matter analysis for unannotated proteins
 - Novelty classification (database_match, close_homolog, remote_homolog, twilight_zone)
+
+### Gene Calling (`--gene-caller`) -- COMPLETE
+
+Unified gene calling module for nucleotide contig input. Pyrodigal-gv handles standard viral ORFs (~97%), while miniprot provides splice-aware protein-to-genome alignment for eukaryotic viral genes with introns (~3%).
+
+**Status**: Complete. 83 tests (38 unit + 22 nucleotide IO + 23 integration with real T4 phage genome).
+
+| Component | Purpose | Install |
+|-----------|---------|---------|
+| Pyrodigal-gv | Ab initio viral ORF calling (metagenomic mode) | `pip install vhold[genecalling]` |
+| miniprot | Splice-aware protein-to-genome alignment | `conda install -c bioconda miniprot` |
+| Reference DB | 74 curated Swiss-Prot proteins from 9 virus families | Bundled (`data/miniprot_viral_refs.faa`, 39KB) |
+
+**CLI options**: `--gene-caller` (auto\|pyrodigal\|none, default: none), `--translation-table` (default: 11), `--closed/--no-closed`, `--min-gene` (default: 90nt)
+
+**Merge strategy**: All Pyrodigal genes kept. miniprot genes added only when <50% reciprocal overlap with any Pyrodigal gene on the same contig/strand — catches spliced genes missed by ab initio calling.
+
+**Reference protein families**: Adenoviridae, Papillomaviridae, Polyomaviridae, Retroviridae, Herpesviridae, Orthomyxoviridae, Bornaviridae, Circoviridae, Caulimoviridae. 29 truly multi-exon CDS + 3 frameshift products + 6 leader-spliced + 35 contiguous ORFs across 34 organisms.
+
+**Validation results**:
+- SARS-CoV-2: 12 Pyrodigal genes (correct — no spliced genes)
+- HAdV-5: 31 Pyrodigal + 11 miniprot hits (all overlapping >50% → 31 total)
+- HPV-16: 12 miniprot hits (cross-species matches included)
+- T4 phage: 265 Pyrodigal genes from full genome
+
+**Output**: Called genes written as GFF3 + protein FASTA to output directory. `CalledGene` → `ProteinRecord` conversion preserves genomic coordinates for downstream neighborhood voting.
 
 ### Embedding-Based Triage (`--triage`) -- COMPLETE
 
@@ -195,22 +228,33 @@ Fine-tunes ProstT5 encoder with LoRA + supervised contrastive loss (SupCon-Hard,
 
 **Integration**: `EmbeddingExtractor.load_model()` auto-detects installed adapter, loads via peft, and calls `merge_and_unload()` to permanently fuse weights. Falls back gracefully if peft not installed or adapter corrupt. Disable with `--no-lora`.
 
-### ONNX INT8 Quantization (`--backend onnx`) -- COMPLETE
+### ONNX INT8 Quantization (`--backend onnx`) -- VALIDATED
 
-Optional ONNX INT8 backend for 3-6x CPU inference speedup. One-time export via `vhold export-onnx`, then use with `--backend onnx` on run/predict/align commands.
+Optional ONNX INT8 backend for faster CPU inference. One-time export via `vhold export-onnx`, then use with `--backend onnx` on run/predict/align commands.
 
-**Status**: Code complete, integrated into pipeline. Not yet validated end-to-end (requires running export + validation script).
+**Status**: Complete. Exported, quantized, and validated on Apple Silicon (arm64).
 
 | Metric | Value |
 |--------|-------|
 | Export command | `vhold export-onnx` |
 | Quantization | INT8 dynamic (auto-detected: avx512_vnni, avx512, avx2, arm64) |
-| Expected CPU speedup | 3-6x (architecture-dependent) |
 | Model format | ONNX via Optimum `ORTModelForSeq2SeqLM` |
+| FP32 model size | ~16.8 GB (3 ONNX files) |
+| INT8 model size | **4.23 GB** (75% reduction) |
 | Location | `~/.vhold/models/onnx_int8/` |
-| Requires | `pip install 'vhold[onnx]'` (optimum + onnxruntime) |
+| Requires | `pip install 'vhold[onnx]'` (optimum>=1.17.0 + onnxruntime>=1.17.0,<1.24) |
+| Export time | ~25 min on Apple M4 (model loading + ONNX tracing + INT8 quantization) |
+
+**Validation results** (Apple M4, arm64 INT8, greedy decoding):
+- SARS-CoV-2 ORF10 (38aa): 3Di prediction correct, confidence 0.963, 1.3s
+- SARS-CoV-2 NS7B (43aa): 3Di prediction correct, confidence 0.952, 1.4s
+- SARS-CoV-2 NS6 (61aa): 3Di prediction correct, confidence 0.971, 1.7s
+- Embeddings: 1024-dim, L2-normalized, correct shape and dtype
+- All 3Di characters in valid alphabet
 
 **Integration**: `get_predictor(backend="onnx")` returns `OnnxProstT5Predictor`. Triage and MLP classifier steps route to `OnnxEmbeddingExtractor` when backend is ONNX. Model reuse between triage and decoder is skipped for ONNX (separate model instances).
+
+**Note**: onnxruntime>=1.24 requires Python 3.11+. Pinned to <1.24 for Python 3.10 compatibility.
 
 ### GenBank/GFF3 Input (`--input-format`) -- COMPLETE
 
@@ -218,7 +262,8 @@ Accepts annotated genome files in addition to FASTA. Auto-detects format from fi
 
 | Format | Extensions | Parser |
 |--------|-----------|--------|
-| FASTA | `.fasta`, `.fa`, `.faa` | BioPython SeqIO |
+| Protein FASTA | `.fasta`, `.fa`, `.faa` | BioPython SeqIO |
+| Nucleotide FASTA | `.fna`, `.ffn` | Nucleotide detection + gene calling |
 | GenBank | `.gb`, `.gbk`, `.gbf`, `.genbank` | BioPython CDS extraction |
 | GFF3 | `.gff`, `.gff3` | Custom parser + nucleotide translation |
 
@@ -357,14 +402,12 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 ## Known Issues
 
 - **LoRA adapter not yet trained**: Code complete but training requires CUDA GPU. MPS too slow (~60 sec/batch). Run on A100/H100: `scripts/train_contrastive.py --device cuda`.
-- **ONNX export not yet validated**: Code complete but not tested end-to-end. Run `vhold export-onnx` then `scripts/validate_onnx_quantization.py`.
 
 ## Remaining Work
 
 ### Immediate (before release)
 - **Train contrastive LoRA adapter** (deferred -- needs CUDA): Code ready, run on A100/H100. Marginal value at current stage (83.5% precision limited by annotation quality, not embedding quality)
-- **Validate ONNX export**: Run export + validation script on target hardware
-- **Manuscript / Application Note**: Bioinformatics Application Note with 5 case studies
+- **Manuscript / Application Note**: Bioinformatics Application Note with case studies
 
 ### Medium-term
 - **Metagenomic input metadata**: Parse VirSorter2 score TSV, geNomad taxonomy TSV, VIBRANT quality TSV to carry upstream viral classification through to output. (Output export to anvi'o/vConTACT2/3/DRAM-v/GFF3 is COMPLETE via `vhold export`.)
@@ -390,6 +433,12 @@ uv run vhold run -i genome.gb -o output/ -t 8
 
 # GFF3 input with separate genome FASTA
 uv run vhold run -i genes.gff3 --genome-fasta genome.fna -o output/
+
+# Gene calling from nucleotide contigs (Pyrodigal-gv + miniprot)
+uv run vhold run -i contigs.fna -o output/ --gene-caller auto -t 8
+
+# Pyrodigal only (no miniprot splice-aware search)
+uv run vhold run -i contigs.fna -o output/ --gene-caller pyrodigal
 
 # With embedding triage (skip decoder for known proteins)
 uv run vhold run -i input.fasta -o output/ --triage
