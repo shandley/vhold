@@ -161,3 +161,9 @@ ONNX_MODEL_DIR_NAME = "onnx_int8"
 def get_onnx_model_dir() -> Path:
     """Get the directory for ONNX INT8 quantized models."""
     return get_model_dir() / ONNX_MODEL_DIR_NAME
+
+
+# Gene calling
+DEFAULT_TRANSLATION_TABLE = 11
+DEFAULT_MIN_GENE = 90
+MINIPROT_REF_DB = "miniprot_viral_refs.faa"

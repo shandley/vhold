@@ -54,6 +54,7 @@ onnx = ["optimum[onnxruntime]>=1.17.0", "onnxruntime>=1.17.0"]
 contrastive = ["peft>=0.14.0"]
 disorder = ["metapredict>=3.0"]
 starling = ["idptools-starling>=1.0"]
+genecalling = ["pyrodigal>=3.0"]
 
 [project.scripts]
 vhold = "vhold.cli:main"
@@ -68,7 +69,7 @@ Issues = "https://github.com/vhold/vhold/issues"
 where = ["src"]
 
 [tool.setuptools.package-data]
-vhold = ["data/*.json"]
+vhold = ["data/*.json", "data/*.faa"]
 
 [tool.ruff]
 line-length = 100
@@ -82,3 +83,8 @@ ignore = ["E501"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+
+[dependency-groups]
+dev = [
+    "pyrodigal>=3.7.0",
+]

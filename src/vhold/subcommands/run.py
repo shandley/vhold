@@ -46,6 +46,10 @@ def run_pipeline(
     disorder_classifier_confidence: float = 0.5,
     use_starling_search: bool = False,
     starling_similarity_threshold: float = 0.7,
+    gene_caller: str = "none",
+    translation_table: int = 11,
+    closed: bool = False,
+    min_gene: int = 90,
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -104,16 +108,45 @@ def run_pipeline(
     }
 
     # ========================================
-    # Step 1: Read input sequences
+    # Step 0: Gene calling (if nucleotide input)
     # ========================================
-    logger.info("Step 1: Reading input sequences...")
-    sequences = read_input(
-        input_path,
-        input_format=input_format,
-        fasta_path=genome_fasta,
-        include_mat_peptide=include_mat_peptide,
-    )
-    logger.info(f"Read {len(sequences)} sequences")
+    if gene_caller != "none":
+        from vhold.features.genecall import call_genes as run_gene_calling
+        from vhold.io.nucleotide import read_nucleotide_fasta
+
+        logger.info("Step 0: Calling genes from nucleotide sequences...")
+        contigs = read_nucleotide_fasta(input_path)
+
+        # Write contigs FASTA for miniprot (needs file path)
+        contigs_fasta = output_path / f"{prefix}_contigs.fna"
+        with open(contigs_fasta, "w") as f:
+            for cid, cseq in contigs.items():
+                f.write(f">{cid}\n{cseq}\n")
+
+        sequences = run_gene_calling(
+            contigs=contigs,
+            contigs_fasta=contigs_fasta,
+            output_dir=output_path,
+            gene_caller=gene_caller,
+            translation_table=translation_table,
+            closed=closed,
+            min_gene=min_gene,
+            threads=threads,
+        )
+        logger.info(f"Gene calling produced {len(sequences)} proteins")
+    else:
+        # ========================================
+        # Step 1: Read input sequences
+        # ========================================
+        logger.info("Step 1: Reading input sequences...")
+        sequences = read_input(
+            input_path,
+            input_format=input_format,
+            fasta_path=genome_fasta,
+            include_mat_peptide=include_mat_peptide,
+            gene_caller=gene_caller,
+        )
+        logger.info(f"Read {len(sequences)} sequences")
 
     if not sequences:
         logger.error("No sequences found in input file")

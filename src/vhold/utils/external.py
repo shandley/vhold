@@ -167,3 +167,22 @@ def get_foldmason() -> ExternalTool:
     tool = ExternalTool("foldmason")
     tool.check_available()
     return tool
+
+
+def check_miniprot() -> tuple[bool, str | None]:
+    """Check if miniprot is available and return its version.
+
+    Returns:
+        Tuple of (is_available, version_string)
+    """
+    tool = ExternalTool("miniprot")
+    if not tool.available:
+        return False, None
+    return True, tool.version()
+
+
+def get_miniprot() -> ExternalTool:
+    """Get a miniprot tool instance, checking availability."""
+    tool = ExternalTool("miniprot")
+    tool.check_available()
+    return tool

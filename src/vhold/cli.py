@@ -415,6 +415,30 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     default=None,
     help="Auto-export to metagenomic format(s) after pipeline completes",
 )
+@click.option(
+    "--gene-caller",
+    type=click.Choice(["auto", "pyrodigal", "none"]),
+    default="none",
+    help="Gene calling for nucleotide input: auto (Pyrodigal + miniprot), "
+         "pyrodigal (Pyrodigal only), none (expect protein input, default)",
+)
+@click.option(
+    "--translation-table",
+    default=11,
+    type=int,
+    help="Genetic code for gene calling (11=bacterial/viral, 1=eukaryotic, default: 11)",
+)
+@click.option(
+    "--closed/--no-closed",
+    default=False,
+    help="Only call complete genes with start and stop codons (default: no)",
+)
+@click.option(
+    "--min-gene",
+    default=90,
+    type=int,
+    help="Minimum gene length in nucleotides (default: 90)",
+)
 def run(
     input_file, output, database, databases, threads, batch_size, device,
     evalue, sensitivity, confidence_threshold, model_dir, prefix,
@@ -423,25 +447,49 @@ def run(
     disorder, disorder_threshold, disorder_classifier_confidence,
     use_starling_search, starling_similarity_threshold,
     input_format, genome_fasta, include_mat_peptide, export_formats,
+    gene_caller, translation_table, closed, min_gene,
 ):
     """Run the full vhold annotation pipeline.
 
     This command runs the complete pipeline:
+    0. (Optional) Call genes from nucleotide sequences (--gene-caller)
     1. Predict 3Di sequences using ProstT5
     2. Search against BFVD/Viro3D databases using Foldseek
     3. Transfer annotations and generate output files
 
-    Accepts FASTA (.fasta/.fa/.faa), GenBank (.gb/.gbk), or GFF3 (.gff/.gff3).
-    GenBank/GFF input preserves genomic coordinates for neighborhood voting.
+    Accepts FASTA (.fasta/.fa/.faa), GenBank (.gb/.gbk), GFF3 (.gff/.gff3),
+    or nucleotide FASTA (.fna/.ffn) with --gene-caller.
 
     Examples:
         vhold run -i proteins.fasta -o results/ -t 4
 
         vhold run -i genome.gb -o results/ -t 4
 
+        vhold run -i contigs.fna -o results/ --gene-caller auto -t 4
+
         vhold run -i genes.gff3 --genome-fasta genome.fna -o results/
     """
     import os
+    from pathlib import Path as _Path
+
+    # Auto-detect nucleotide input when gene_caller is "none"
+    if gene_caller == "none":
+        input_suffix = _Path(input_file).suffix.lower()
+        if input_suffix in {".fna", ".ffn"}:
+            click.echo(
+                f"Nucleotide FASTA detected ({input_suffix}). Use --gene-caller auto "
+                "to enable gene calling, or provide protein sequences."
+            )
+            raise SystemExit(1)
+        if input_suffix in {".fasta", ".fa"} and input_format in (None, "auto"):
+            from vhold.io.nucleotide import is_nucleotide_fasta
+            if is_nucleotide_fasta(input_file):
+                click.echo(
+                    "Input appears to contain nucleotide sequences. "
+                    "Use --gene-caller auto to enable gene calling, "
+                    "or provide protein sequences."
+                )
+                raise SystemExit(1)
 
     # Auto-detect LLM availability when user didn't specify --llm/--no-llm
     if llm_classify is None:
@@ -504,6 +552,10 @@ def run(
         genome_fasta=genome_fasta,
         include_mat_peptide=include_mat_peptide,
         export_formats=list(export_formats) if export_formats else None,
+        gene_caller=gene_caller,
+        translation_table=translation_table,
+        closed=closed,
+        min_gene=min_gene,
     )
 
 
