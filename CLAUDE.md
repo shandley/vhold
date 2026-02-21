@@ -245,12 +245,30 @@ Optional ONNX INT8 backend for faster CPU inference. One-time export via `vhold 
 | Requires | `pip install 'vhold[onnx]'` (optimum>=1.17.0 + onnxruntime>=1.17.0,<1.24) |
 | Export time | ~25 min on Apple M4 (model loading + ONNX tracing + INT8 quantization) |
 
-**Validation results** (Apple M4, arm64 INT8, greedy decoding):
-- SARS-CoV-2 ORF10 (38aa): 3Di prediction correct, confidence 0.963, 1.3s
-- SARS-CoV-2 NS7B (43aa): 3Di prediction correct, confidence 0.952, 1.4s
-- SARS-CoV-2 NS6 (61aa): 3Di prediction correct, confidence 0.971, 1.7s
-- Embeddings: 1024-dim, L2-normalized, correct shape and dtype
-- All 3Di characters in valid alphabet
+**Benchmark results** (Apple M4, arm64 INT8, greedy decoding, 14 SARS-CoV-2 proteins 38-601aa):
+
+| Metric | PyTorch CPU | ONNX INT8 | Speedup |
+|--------|:----------:|:---------:|:-------:|
+| Model load | 2168s (~36 min) | 5s | **432x** |
+| Total prediction (14 proteins) | 410s | 196s | **2.1x** |
+| Embedding extraction (14 proteins) | 2216s (~37 min) | 21s | **105x** |
+| Embedding cosine similarity | — | 0.988 mean, 0.978 min | — |
+
+**Per-protein speedup** (prediction only):
+
+| Protein Size | PyTorch CPU | ONNX INT8 | Speedup | 3Di Identity |
+|:------------|:----------:|:---------:|:-------:|:------------:|
+| 38aa | 40.9s | 1.6s | 25.9x | 100% |
+| 43aa | 5.0s | 1.4s | 3.5x | 100% |
+| 60-61aa | 6.7-9.5s | 2.0-2.1s | 3.2-4.7x | 100% |
+| 75-88aa | 8.4-9.8s | 2.7-3.2s | 3.0-3.1x | 92-97% |
+| 121aa | 13.3s | 4.9s | 2.7x | 73% |
+| 180-222aa | 20.3-25.1s | 8.1-11.0s | 2.3-2.5x | 50-87% |
+| 275-306aa | 30.9-37.0s | 15.3-18.3s | 2.0x | 72-93% |
+| 419-480aa | 54.3-63.5s | 31.5-38.2s | 1.7x | 82-89% |
+| 601aa | 85.1s | 55.9s | 1.5x | 35% |
+
+**Summary**: Mean speedup **4.3x**, median **2.6x**. Speedup is largest for small proteins (25x for 38aa) and converges to ~1.5-2x for larger proteins where autoregressive decoding dominates. Mean 3Di identity 83.6% — lower identity for longer proteins is expected with INT8 quantization as errors accumulate over more decoding steps. Embedding quality is excellent (0.988 cosine similarity), so triage accuracy is preserved.
 
 **Integration**: `get_predictor(backend="onnx")` returns `OnnxProstT5Predictor`. Triage and MLP classifier steps route to `OnnxEmbeddingExtractor` when backend is ONNX. Model reuse between triage and decoder is skipped for ONNX (separate model instances).
 
