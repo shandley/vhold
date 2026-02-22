@@ -62,12 +62,25 @@ def main():
     help="Download STARLING search database (~18.6GB)",
 )
 @click.option(
+    "--swissprot/--no-swissprot",
+    "swissprot",
+    default=False,
+    help="Download Swiss-Prot viral reference DB for GO transfer",
+)
+@click.option(
+    "--swissprot-all",
+    is_flag=True,
+    default=False,
+    help="Download full Swiss-Prot reference DB (570K proteins, ~1.1GB) for cross-domain discovery",
+)
+@click.option(
     "--all-models",
     is_flag=True,
     default=False,
     help="Download all optional models (embeddings + classifier + disorder classifier). Does not include STARLING DB; use --starling-db separately.",
 )
-def install(database, bfvd, viro3d, force, embeddings, classifier, disorder_classifier, starling_db, all_models):
+def install(database, bfvd, viro3d, force, embeddings, classifier, disorder_classifier, starling_db,
+            swissprot, swissprot_all, all_models):
     """Download and install reference databases.
 
     Downloads BFVD and Viro3D Foldseek databases and metadata files
@@ -89,6 +102,16 @@ def install(database, bfvd, viro3d, force, embeddings, classifier, disorder_clas
         install_starling_db=starling_db,
         force=force,
     )
+
+    # Swiss-Prot reference DB (separate from main install flow)
+    if swissprot or swissprot_all:
+        from pathlib import Path as _P
+        from vhold.databases.swissprot import install_swissprot_db
+        from vhold.utils.constants import get_db_dir
+
+        db_dir = _P(database) if database else get_db_dir()
+        scope = "all" if swissprot_all else "viral"
+        install_swissprot_db(db_dir, scope=scope, force=force)
 
 
 @main.command()
@@ -339,8 +362,8 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
 )
 @click.option(
     "--classify/--no-classify",
-    default=True,
-    help="Use MLP classifier for unknown proteins (requires trained model)",
+    default=False,
+    help="Use MLP classifier for unknown proteins (default: disabled, use --classify to enable)",
 )
 @click.option(
     "--classifier-confidence",
@@ -416,6 +439,35 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     help="Auto-export to metagenomic format(s) after pipeline completes",
 )
 @click.option(
+    "--go-transfer/--no-go-transfer",
+    "go_transfer",
+    default=None,
+    help="GO term transfer from Swiss-Prot (auto-enabled when DB installed)",
+)
+@click.option(
+    "--go-transfer-k",
+    default=3,
+    type=int,
+    help="Number of nearest neighbors for GO transfer (default: 3)",
+)
+@click.option(
+    "--go-transfer-threshold",
+    default=0.5,
+    type=float,
+    help="Min cosine similarity for GO transfer (default: 0.5)",
+)
+@click.option(
+    "--go-reliability-threshold",
+    default=0.3,
+    type=float,
+    help="Min Reliability Index to keep transferred GO term (default: 0.3)",
+)
+@click.option(
+    "--cross-domain/--no-cross-domain",
+    default=True,
+    help="Include non-viral Swiss-Prot matches for cross-domain discovery (default: yes)",
+)
+@click.option(
     "--gene-caller",
     type=click.Choice(["auto", "pyrodigal", "none"]),
     default="none",
@@ -447,6 +499,8 @@ def run(
     disorder, disorder_threshold, disorder_classifier_confidence,
     use_starling_search, starling_similarity_threshold,
     input_format, genome_fasta, include_mat_peptide, export_formats,
+    go_transfer, go_transfer_k, go_transfer_threshold,
+    go_reliability_threshold, cross_domain,
     gene_caller, translation_table, closed, min_gene,
 ):
     """Run the full vhold annotation pipeline.
@@ -520,6 +574,18 @@ def run(
                 "Use --no-starling-search to disable."
             )
 
+    # Auto-detect GO transfer availability (Swiss-Prot DB installed)
+    if go_transfer is None:
+        from vhold.databases.swissprot import get_available_scope
+        go_transfer = get_available_scope(
+            _Path(database) if database else None
+        ) is not None
+        if go_transfer:
+            click.echo(
+                "GO term transfer auto-enabled (Swiss-Prot DB detected). "
+                "Use --no-go-transfer to disable."
+            )
+
     from vhold.subcommands.run import run_pipeline
     run_pipeline(
         input_file=input_file,
@@ -556,6 +622,11 @@ def run(
         translation_table=translation_table,
         closed=closed,
         min_gene=min_gene,
+        go_transfer=bool(go_transfer),
+        go_transfer_k=go_transfer_k,
+        go_transfer_threshold=go_transfer_threshold,
+        go_reliability_threshold=go_reliability_threshold,
+        cross_domain=cross_domain,
     )
 
 

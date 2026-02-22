@@ -76,6 +76,13 @@ CONSENSUS_TSV_COLUMNS = [
     "disorder_fraction",
     "disorder_class",
     "disorder_regions",
+    "go_transfer_ri",
+    "go_transfer_best_match",
+    "go_transfer_similarity",
+    "go_evidence_codes",
+    "dual_validation",
+    "is_cross_domain",
+    "cross_domain_organism",
 ]
 
 
@@ -398,6 +405,24 @@ def write_consensus_summary_json(
             ),
         }
 
+    # GO transfer statistics
+    go_transfer_stats: dict = {}
+    go_transfer_ris = [
+        ann.go_transfer_ri for ann in annotations.values() if ann.go_transfer_ri > 0
+    ]
+    if go_transfer_ris:
+        dual_dist: dict[str, int] = {}
+        for ann in annotations.values():
+            if ann.dual_validation:
+                dual_dist[ann.dual_validation] = dual_dist.get(ann.dual_validation, 0) + 1
+        n_cross = sum(1 for a in annotations.values() if a.is_cross_domain)
+        go_transfer_stats = {
+            "proteins_with_go_transfer": len(go_transfer_ris),
+            "mean_reliability_index": round(sum(go_transfer_ris) / len(go_transfer_ris), 3),
+            "cross_domain_discoveries": n_cross,
+            "dual_validation_distribution": dual_dist,
+        }
+
     # Analyze dark matter proteins
     dark_matter_report = analyze_dark_matter(annotations)
     dark_matter_summary = get_dark_matter_summary(dark_matter_report)
@@ -426,6 +451,7 @@ def write_consensus_summary_json(
             "structure_quality_stats": structure_quality_stats,
             "structure_quality_source_distribution": structure_source_dist,
             "disorder_stats": disorder_stats,
+            "go_transfer_stats": go_transfer_stats,
         },
         "dark_matter": dark_matter_summary,
     }
@@ -532,4 +558,49 @@ def generate_report_consensus(
         write_dark_matter_tsv(dark_matter_report, dm_path)
         output_files["dark_matter"] = dm_path
 
+    # Write cross-domain discovery report (if any)
+    cross_domain_proteins = {
+        qid: ann for qid, ann in annotations.items() if ann.is_cross_domain
+    }
+    if cross_domain_proteins:
+        cd_path = output_dir / f"{prefix}_cross_domain.tsv"
+        write_cross_domain_tsv(cross_domain_proteins, cd_path)
+        output_files["cross_domain"] = cd_path
+
     return output_files
+
+
+def write_cross_domain_tsv(
+    annotations: dict[str, ConsensusResult],
+    output_path: Path | str,
+) -> None:
+    """Write cross-domain discovery report.
+
+    Lists proteins where the best GO transfer donor is non-viral,
+    indicating functional homology across domains of life.
+
+    Args:
+        annotations: Dict of cross-domain ConsensusResult objects
+        output_path: Output file path
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for qid, ann in annotations.items():
+        rows.append({
+            "query_id": qid,
+            "query_length": ann.query_length,
+            "description": ann.description,
+            "functional_category": ann.functional_category,
+            "go_transfer_ri": round(ann.go_transfer_ri, 3) if ann.go_transfer_ri else "",
+            "go_transfer_best_match": ann.go_transfer_best_accession,
+            "go_transfer_similarity": round(ann.go_transfer_best_similarity, 3) if ann.go_transfer_best_similarity else "",
+            "go_evidence_codes": ann.go_evidence_codes,
+            "dual_validation": ann.dual_validation,
+            "cross_domain_organism": ann.cross_domain_organism,
+        })
+
+    df = pd.DataFrame(rows)
+    df.to_csv(output_path, sep="\t", index=False)
+    logger.info(f"Wrote {len(df)} cross-domain discoveries to {output_path}")

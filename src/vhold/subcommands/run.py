@@ -50,6 +50,11 @@ def run_pipeline(
     translation_table: int = 11,
     closed: bool = False,
     min_gene: int = 90,
+    go_transfer: bool = False,
+    go_transfer_k: int = 3,
+    go_transfer_threshold: float = 0.5,
+    go_reliability_threshold: float = 0.3,
+    cross_domain: bool = True,
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -105,6 +110,10 @@ def run_pipeline(
         "disorder_classifier_confidence": disorder_classifier_confidence,
         "starling_search": use_starling_search,
         "starling_similarity_threshold": starling_similarity_threshold,
+        "go_transfer": go_transfer,
+        "go_transfer_k": go_transfer_k,
+        "go_transfer_threshold": go_transfer_threshold,
+        "go_reliability_threshold": go_reliability_threshold,
     }
 
     # ========================================
@@ -265,6 +274,81 @@ def run_pipeline(
             logger.info("")
 
     # ========================================
+    # Step 1c: GO term transfer (FANTASIA-style, optional)
+    # ========================================
+    go_transfer_results: dict = {}
+    _query_embeddings = None
+    _query_ids: list[str] | None = None
+
+    if go_transfer:
+        from vhold.databases.swissprot import get_available_scope
+
+        swissprot_scope = get_available_scope(db_dir)
+        if swissprot_scope is not None:
+            logger.info(
+                f"Step 1c: GO term transfer from Swiss-Prot "
+                f"(scope={swissprot_scope}, k={go_transfer_k})..."
+            )
+
+            from vhold.features.go_transfer import SwissProtReferenceDB, run_go_transfer
+
+            swissprot_db = SwissProtReferenceDB(scope=swissprot_scope, db_dir=db_dir)
+            swissprot_db.load()
+
+            # Extract embeddings (reuse from triage if available)
+            if triage and shared_model is not None:
+                # Re-extract embeddings using the same model/tokenizer
+                from vhold.features.embeddings import EmbeddingExtractor
+                _extractor = EmbeddingExtractor(
+                    device=device,
+                    model_dir=Path(model_dir) if model_dir else None,
+                    model=shared_model,
+                    tokenizer=shared_tokenizer,
+                    encoder_only=False,
+                    use_lora=use_lora,
+                )
+                _query_ids, _query_embeddings = _extractor.extract_batch(
+                    seq_dict, batch_size=batch_size, show_progress=False,
+                )
+            elif backend == "onnx":
+                from vhold.features.onnx_embeddings import OnnxEmbeddingExtractor
+                _onnx_ext = OnnxEmbeddingExtractor(
+                    model_dir=Path(model_dir) if model_dir else None,
+                )
+                _query_ids, _query_embeddings = _onnx_ext.extract_batch(
+                    seq_dict, show_progress=False,
+                )
+
+            go_transfer_results = run_go_transfer(
+                sequences=seq_dict,
+                query_embeddings=_query_embeddings,
+                query_ids=_query_ids,
+                swissprot_db=swissprot_db,
+                k=go_transfer_k,
+                threshold=go_transfer_threshold,
+                reliability_threshold=go_reliability_threshold,
+                device=device,
+                model_dir=Path(model_dir) if model_dir else None,
+                batch_size=batch_size,
+                db_dir=db_dir,
+            )
+
+            n_with_go = sum(1 for r in go_transfer_results.values() if r.has_terms)
+            n_cross = sum(1 for r in go_transfer_results.values() if r.is_cross_domain)
+            logger.info(
+                f"GO transfer: {n_with_go}/{len(go_transfer_results)} proteins "
+                f"received GO terms, {n_cross} cross-domain"
+            )
+            logger.info("")
+        else:
+            logger.info(
+                "Swiss-Prot reference DB not installed, skipping GO transfer. "
+                "Build with 'scripts/build_swissprot_reference.py' or "
+                "use 'vhold install --swissprot'."
+            )
+            logger.info("")
+
+    # ========================================
     # Step 2: Predict 3Di sequences
     # ========================================
     predictions_dir = output_path / "predictions"
@@ -412,6 +496,43 @@ def run_pipeline(
     annotated = sum(1 for a in annotations.values() if a.is_annotated)
     logger.info(f"Total annotated: {annotated}/{len(annotations)} proteins")
     logger.info("")
+
+    # ========================================
+    # Step 4a.1: Dual validation (GO transfer + Foldseek)
+    # ========================================
+    if go_transfer_results:
+        from vhold.results.dual_validation import (
+            merge_go_into_consensus,
+            validate_dual_evidence,
+        )
+
+        logger.info("Step 4a.1: Dual validation (GO transfer + Foldseek)...")
+        n_agree = n_disagree = n_go_only = n_foldseek_only = 0
+        n_cross_domain_total = 0
+
+        for qid, consensus in annotations.items():
+            go_result = go_transfer_results.get(qid)
+            validation = validate_dual_evidence(consensus, go_result)
+            merge_go_into_consensus(consensus, go_result, validation)
+
+            if validation.agreement == "dual_agree":
+                n_agree += 1
+            elif validation.agreement == "dual_disagree":
+                n_disagree += 1
+            elif validation.agreement == "go_only":
+                n_go_only += 1
+            else:
+                n_foldseek_only += 1
+            if validation.is_cross_domain:
+                n_cross_domain_total += 1
+
+        logger.info(
+            f"Dual validation: agree={n_agree}, disagree={n_disagree}, "
+            f"go_only={n_go_only}, foldseek_only={n_foldseek_only}"
+        )
+        if n_cross_domain_total:
+            logger.info(f"Cross-domain discoveries: {n_cross_domain_total}")
+        logger.info("")
 
     # ========================================
     # Step 4a.2: Disorder annotation (auto-enabled)

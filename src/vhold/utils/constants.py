@@ -163,6 +163,20 @@ def get_onnx_model_dir() -> Path:
     return get_model_dir() / ONNX_MODEL_DIR_NAME
 
 
+# GO term transfer (FANTASIA-style)
+DEFAULT_GO_TRANSFER_K = 3  # Number of nearest neighbors for GO transfer
+DEFAULT_GO_TRANSFER_THRESHOLD = 0.5  # Min cosine similarity to transfer
+DEFAULT_RELIABILITY_THRESHOLD = 0.3  # Min combined RI to keep GO term
+EXPERIMENTAL_EVIDENCE_CODES = frozenset(
+    {"EXP", "IDA", "IPI", "IMP", "IGI", "IEP", "TAS", "IC"}
+)
+
+# Swiss-Prot reference database files
+SWISSPROT_VIRAL_EMBEDDINGS = "swissprot_viral_embeddings.npz"
+SWISSPROT_VIRAL_METADATA = "swissprot_viral_metadata.json"
+SWISSPROT_ALL_EMBEDDINGS = "swissprot_all_embeddings.npz"
+SWISSPROT_ALL_METADATA = "swissprot_all_metadata.json"
+
 # Gene calling
 DEFAULT_TRANSLATION_TABLE = 11
 DEFAULT_MIN_GENE = 90

@@ -131,6 +131,17 @@ class ConsensusResult:
     disorder_regions: list[tuple[int, int]] | None = None
     disorder_class: str | None = None  # "ordered", "partially_disordered", "highly_disordered"
 
+    # GO term transfer (from Swiss-Prot embedding similarity, FANTASIA-style)
+    go_transfer_ri: float = 0.0  # best combined Reliability Index
+    go_transfer_k: int = 0  # number of donors used
+    go_evidence_codes: str = ""  # pipe-separated evidence codes
+    go_transfer_best_accession: str = ""  # best Swiss-Prot match
+    go_transfer_best_similarity: float = 0.0  # cosine sim to best match
+    go_transfer_source: str = ""  # "swissprot"
+    is_cross_domain: bool = False  # non-viral donor
+    cross_domain_organism: str = ""  # donor details if cross-domain
+    dual_validation: str = ""  # "dual_agree", "dual_disagree", "go_only", "foldseek_only"
+
     # All hits by database
     hits_by_db: dict = field(default_factory=dict)
 
@@ -204,6 +215,17 @@ class ConsensusResult:
         # Add hit counts per database
         for db, hits in self.hits_by_db.items():
             result[f"{db}_hits"] = len(hits)
+
+        # Add GO transfer fields if present
+        if self.go_transfer_ri > 0:
+            result["go_transfer_ri"] = round(self.go_transfer_ri, 3)
+            result["go_transfer_best_match"] = self.go_transfer_best_accession
+            result["go_transfer_similarity"] = round(self.go_transfer_best_similarity, 3)
+            result["go_evidence_codes"] = self.go_evidence_codes
+            result["dual_validation"] = self.dual_validation
+            result["is_cross_domain"] = self.is_cross_domain
+            if self.cross_domain_organism:
+                result["cross_domain_organism"] = self.cross_domain_organism
 
         return result
 
