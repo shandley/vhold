@@ -144,47 +144,36 @@ def parse_swissprot_xml(
         fh = open(xml_path, "rb")
 
     try:
-        # Use start/end events so we can track the root element and
-        # delete processed entries from it to free memory.
+        # Use start/end events to track the root and free parsed entries.
+        # The key memory optimization: after processing each <entry>, we
+        # clear it AND remove it from the root element. Without removal,
+        # root accumulates 570K+ child references and the tree grows to
+        # tens of GB.
         context = ET.iterparse(fh, events=("start", "end"))
         root = None
 
         for event, elem in context:
-            if event == "start" and root is None:
-                root = elem  # Capture the <uniprot> root element
+            if event == "start":
+                if root is None:
+                    root = elem  # Capture the <uniprot> root element
                 continue
-            if event != "end" or elem.tag != f"{UNIPROT_NS}entry":
+
+            # Only process "end" events for <entry> elements
+            if elem.tag != f"{UNIPROT_NS}entry":
                 continue
 
             n_total += 1
 
-            def _clear_elem():
-                """Clear element and remove from root to free memory."""
-                elem.clear()
-                if root is not None:
-                    root.remove(elem)
-
             # Extract accession
             acc_elem = elem.find(f"{UNIPROT_NS}accession")
             if acc_elem is None or acc_elem.text is None:
-                _clear_elem()
+                elem.clear()
+                if root is not None:
+                    root.remove(elem)
                 continue
             accession = acc_elem.text
 
-            # Extract name
-            name_elem = elem.find(f"{UNIPROT_NS}name")
-            name = name_elem.text if name_elem is not None and name_elem.text else ""
-
-            # Extract organism and lineage
-            organism_elem = elem.find(
-                f"{UNIPROT_NS}organism/{UNIPROT_NS}name[@type='scientific']"
-            )
-            organism = (
-                organism_elem.text
-                if organism_elem is not None and organism_elem.text
-                else ""
-            )
-
+            # Extract organism and lineage EARLY for fast scope filtering
             lineage_elem = elem.find(f"{UNIPROT_NS}organism/{UNIPROT_NS}lineage")
             lineage_parts: list[str] = []
             if lineage_elem is not None:
@@ -193,11 +182,27 @@ def parse_swissprot_xml(
                         lineage_parts.append(taxon.text)
             lineage = "; ".join(lineage_parts)
 
-            # Filter by scope
+            # Filter by scope EARLY (skip ~97% of entries for viral scope)
             if scope == "viral" and not lineage.startswith("Viruses"):
                 n_skipped_scope += 1
-                _clear_elem()
+                elem.clear()
+                if root is not None:
+                    root.remove(elem)
                 continue
+
+            # Extract name
+            name_elem = elem.find(f"{UNIPROT_NS}name")
+            name = name_elem.text if name_elem is not None and name_elem.text else ""
+
+            # Extract organism
+            organism_elem = elem.find(
+                f"{UNIPROT_NS}organism/{UNIPROT_NS}name[@type='scientific']"
+            )
+            organism = (
+                organism_elem.text
+                if organism_elem is not None and organism_elem.text
+                else ""
+            )
 
             # Extract sequence
             seq_elem = elem.find(f"{UNIPROT_NS}sequence")
@@ -208,7 +213,9 @@ def parse_swissprot_xml(
                 length = len(sequence)
             if not sequence:
                 n_skipped_no_seq += 1
-                _clear_elem()
+                elem.clear()
+                if root is not None:
+                    root.remove(elem)
                 continue
 
             # Extract GO annotations with experimental evidence
@@ -253,7 +260,9 @@ def parse_swissprot_xml(
             # Filter: require at least one experimental GO annotation
             if require_go and not go_annotations:
                 n_skipped_no_go += 1
-                _clear_elem()
+                elem.clear()
+                if root is not None:
+                    root.remove(elem)
                 continue
 
             entries.append(
@@ -278,7 +287,9 @@ def parse_swissprot_xml(
                 )
 
             # Clear element and remove from root to free memory
-            _clear_elem()
+            elem.clear()
+            if root is not None:
+                root.remove(elem)
     finally:
         fh.close()
 

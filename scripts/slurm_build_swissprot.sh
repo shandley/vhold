@@ -2,7 +2,7 @@
 #SBATCH -p gpu
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 #SBATCH --time=8:00:00
 #SBATCH -J swissprot_build
 #SBATCH -o swissprot_%j.log
