@@ -91,23 +91,7 @@ vHold classifies hits by "novelty" to help users understand the value of each an
 
 ## Database Statistics
 
-### Identity Distribution (from Case Study 2)
-
-```
-BFVD (938 hits):
-  twilight (0-20%):   728 (77.6%)  ████████████████████████████████████████
-  remote (20-30%):     73 (7.8%)   ████
-  moderate (30-50%):  100 (10.7%)  █████
-  easy (50%+):         37 (3.9%)   ██
-
-Viro3D (540 hits):
-  twilight (0-20%):   495 (91.7%)  ██████████████████████████████████████████████
-  remote (20-30%):     44 (8.1%)   ████
-  moderate (30-50%):    0 (0%)
-  easy (50%+):          1 (0.2%)
-```
-
-This shows that the vast majority of structural hits are in the "twilight zone" where BLAST fails.
+Identity distribution across Foldseek hits varies by query dataset. In general, the vast majority of structural hits are in the "twilight zone" (<30% identity) where BLAST fails, particularly for Viro3D which contains structures from diverse virus species. This is where vHold provides unique value.
 
 ## Recommendations
 

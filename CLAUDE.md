@@ -1,6 +1,6 @@
 # vHold Project State - Claude Code Context
 
-Last updated: 2026-02-21
+Last updated: 2026-02-22
 
 ## Project Overview
 
@@ -71,6 +71,10 @@ vHold Pipeline:
 | `src/vhold/results/annotations.py` | Consensus annotation transfer |
 | `src/vhold/results/categories.py` | Keyword-based functional classification |
 | `src/vhold/results/go_terms.py` | GO term ID resolution (name→ID from bundled OBO map) |
+| `src/vhold/results/dual_validation.py` | Dual validation: GO transfer + Foldseek agreement scoring |
+| `src/vhold/features/go_transfer.py` | FANTASIA-style GO term transfer via Swiss-Prot embedding similarity |
+| `src/vhold/features/go_filter.py` | Two-layer GO plausibility filtering (viral whitelist + LLM validation) |
+| `src/vhold/databases/swissprot.py` | Swiss-Prot reference DB management (GOAnnotation, SwissProtEntry) |
 | `src/vhold/results/neighborhood.py` | Neighborhood voting (gene-order-based classification) |
 | `src/vhold/results/llm_classify.py` | LLM-based functional classification (keywords + embedding unknowns) |
 | `src/vhold/utils/constants.py` | Thresholds, DB URLs, embedding config |
@@ -87,7 +91,7 @@ vHold Pipeline:
 | `scripts/calibrate_triage_threshold.py` | Triage threshold calibration across 4 case studies |
 | `scripts/build_go_term_map.py` | Build GO term name→ID JSON from OBO file |
 | `scripts/train_disorder_classifier.py` | Disorder classifier training (STARLING embeddings) |
-| `tests/` | 854+ tests (pytest) |
+| `tests/` | 869+ tests (pytest) |
 
 ## Implemented Features
 
@@ -140,16 +144,7 @@ Fast pre-screening using ProstT5 encoder-only embeddings (~0.1s/protein) to skip
 | Default threshold | 0.90 (calibrated) |
 | Location | `~/.vhold/databases/embeddings/vhold_embeddings.npz` |
 
-**Triage calibration results** (85 proteins across 4 case studies):
-
-| Configuration | Precision | F1 | Notes |
-|--------------|-----------|------|-------|
-| Bare embeddings | 29.4% | - | Before enriched metadata |
-| + Enriched BFVD metadata | 67.1% | 0.803 | 345K UniProt annotations |
-| + Keyword fixes | 77.6% | 0.874 | Structural, protease, regulatory terms |
-| + LLM reclassification | **83.5%** | **0.910** | Claude Haiku resolves ORF/VP unknowns |
-
-At threshold 0.90: 100% recall (all 85 test proteins matched, min similarity 0.904). Remaining 14 false positives are annotation quality issues (deleted UniProt entries, UniParc-only IDs, ground truth category debates).
+**Triage calibration**: Threshold 0.90 (calibrated). At this threshold, triage matched all 105 test proteins across 3 case studies (100% recall). Functional accuracy of triage-sourced annotations is ~93% on proteins with known function. Remaining errors are category boundary issues and GO term overrides, not embedding quality.
 
 **Enriched BFVD metadata**: `~/.vhold/databases/bfvd/bfvd_metadata_enriched.tsv` (79 MB, 345,730 entries). Contains protein names, gene names, GO BP/MF, Pfam domains, keywords, function_cc, lineage from UniProt REST API. Hosted on Zenodo (record 18652045), auto-downloaded with `vhold install`.
 
@@ -189,6 +184,8 @@ Lightweight MLP trained on frozen ProstT5 encoder embeddings to classify viral p
 
 **Agreement filtering insight**: Text-based labels and structure-based predictions are complementary signals. Labels where both agree are high-quality; labels where they disagree are noisy. This principle could be applied iteratively.
 
+**Real-world performance** (2026-02-21, 3 case studies, 105 proteins): MLP classifier achieves ~22% accuracy on functional proteins and 0% on truly unknown proteins (over-classifies all of them). Net-negative impact on overall accuracy — pipeline accuracy drops from ~80% to ~60% due to MLP over-classification. **Recommendation**: Add softmax entropy abstain threshold or disable with `--no-classify` until retrained.
+
 ### Contrastive LoRA Fine-Tuning (`--lora/--no-lora`) -- CODE COMPLETE, NEEDS CUDA
 
 Fine-tunes ProstT5 encoder with LoRA + supervised contrastive loss (SupCon-Hard, based on CLEAN, Yu et al. Science 2023) so that functionally similar viral proteins produce closer embeddings. Improves triage and classifier quality.
@@ -224,7 +221,7 @@ Fine-tunes ProstT5 encoder with LoRA + supervised contrastive loss (SupCon-Hard,
 - Estimated epoch time: ~7 hours; 5 epochs: ~35 hours
 - **Verdict**: Impractical on MPS. Needs CUDA A100/H100 where batches would be ~5-10 sec
 
-**Cost-benefit assessment**: Current triage achieves 83.5% precision / 100% recall / F1=0.910 without contrastive fine-tuning. Remaining 14 false positives are annotation quality issues (deleted UniProt entries, UniParc-only IDs), not embedding quality. Marginal improvement from contrastive training (~2-7% precision) does not justify the compute cost on available hardware.
+**Cost-benefit assessment**: Embedding triage achieves ~93% functional accuracy across 105 proteins (3 case studies). Remaining errors are annotation quality issues (host_interaction, category boundary ambiguity) and MLP over-classification of unknowns. Contrastive training unlikely to address these issues — they require better keyword mappings, classifier abstain thresholds, and LLM reclassification.
 
 **Integration**: `EmbeddingExtractor.load_model()` auto-detects installed adapter, loads via peft, and calls `merge_and_unload()` to permanently fuse weights. Falls back gracefully if peft not installed or adapter corrupt. Disable with `--no-lora`.
 
@@ -368,6 +365,45 @@ Three-layer disorder integration for viral proteins poorly served by structural 
 - Module-level SearchEngine cache to avoid reloading 18.6GB FAISS index
 - Classification evidence source tracking: `classification_source=f"starling_search:{evidence_source}"`
 
+### GO Term Transfer (`--go-transfer/--no-go-transfer`) -- COMPLETE
+
+FANTASIA-style GO term transfer from Swiss-Prot reference proteins via ProstT5 embedding cosine similarity. Transfers experimentally validated GO annotations (EXP, IDA, IPI, IMP, IGI, IEP, TAS, IC evidence codes) from nearest Swiss-Prot neighbors. Auto-enabled when Swiss-Prot reference DB is installed.
+
+**Status**: Complete. Swiss-Prot reference DB built (78,475 proteins). Dual validation with Foldseek structural search. Domain-aware cross-domain filtering.
+
+| Metric | Value |
+|--------|-------|
+| Reference proteins (viral scope) | 1,122 |
+| Reference proteins (all scope) | 78,475 |
+| Embedding dimensions | 1,024 (float16, L2-normalized) |
+| DB size (all scope) | 141 MB embeddings + 68 MB metadata |
+| Search latency | 15.6s for 60 queries against 78K references |
+| Default threshold | 0.5 (same-domain), 0.95 (cross-domain) |
+| Reliability Index | Combined RI = 1 - prod(1 - sim_i) across k donors |
+
+**Key source files**:
+- `src/vhold/features/go_transfer.py` — TransferredGOTerm, GOTransferResult, SwissProtReferenceDB, transfer_go_terms(), run_go_transfer()
+- `src/vhold/features/go_filter.py` — Two-layer GO plausibility filtering: build_viral_go_set(), filter_cross_domain_go_terms(), _validate_go_terms_llm()
+- `src/vhold/databases/swissprot.py` — GOAnnotation, SwissProtEntry, path management
+- `src/vhold/results/dual_validation.py` — DualValidationResult, validate_dual_evidence(), merge_go_into_consensus()
+- `scripts/build_swissprot_reference.py` — Swiss-Prot XML download + ProstT5 embedding extraction
+
+**Domain-aware cross-domain filtering**:
+- Viral donors (lineage starts with "Viruses"): threshold=0.5
+- Non-viral donors: cross_domain_threshold=0.95 (only very high similarity transfers)
+- `--no-cross-domain`: excludes all non-viral donors
+- `--cross-domain-threshold`: adjustable (default 0.95)
+
+**Two-layer GO plausibility filtering** (Step 1c.1, auto-runs after GO transfer):
+- Layer 1 (hard filter): Data-driven viral GO whitelist. Any GO term annotated to at least one viral Swiss-Prot entry is plausible. Cross-domain terms NOT in this set are removed. Zero false negatives for known viral functions.
+- Layer 2 (LLM filter): Optional contextual validation of removed terms. LLM can rescue genuinely plausible novel functions not yet annotated in any virus. Piggybacks on `--llm/--no-llm` flag.
+- Same-domain (viral→viral) GO terms are never filtered.
+- `SwissProtReferenceDB.viral_go_ids` computed once at DB load time.
+
+**CLI options**: `--go-transfer/--no-go-transfer` (auto-enabled), `--go-transfer-k` (default 3), `--go-transfer-threshold` (default 0.5), `--go-reliability-threshold` (default 0.3), `--cross-domain/--no-cross-domain` (default yes), `--cross-domain-threshold` (default 0.95)
+
+**Constants**: `DEFAULT_GO_TRANSFER_K=3`, `DEFAULT_GO_TRANSFER_THRESHOLD=0.5`, `DEFAULT_RELIABILITY_THRESHOLD=0.3`, `DEFAULT_CROSS_DOMAIN_THRESHOLD=0.95`
+
 ### LLM Classification (`--llm/--no-llm`)
 - Post-processing step using Claude to reclassify proteins where keywords return "unknown"
 - **Auto-enabled** when `ANTHROPIC_API_KEY` is set; `--no-llm` to opt out
@@ -406,30 +442,53 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 
 **Pipeline**: Input FASTA -> ProstT5 3Di -> confidence masking -> Foldseek DB -> FoldMason `structuremsa` (fastMode) -> AA MSA + 3Di MSA + guide tree
 
-## Completed Case Studies
+## Case Studies (re-run 2026-02-21)
 
-| # | Name | Proteins | Results |
-|---|------|----------|---------|
-| 1 | SARS-CoV-2 | 18 | 55.6% annotated, 100% structural accuracy |
-| 2 | Remote Homology | 10 | 100% annotated, 91.7% twilight zone hits |
-| 3 | Metagenomic Dark Matter | 30 | 83.3% annotated, 70% RdRp classification |
-| 4 | crAssphage ORFans | 37 | Setup only (deprioritized - phage focus) |
-| 5 | Eukaryotic Viruses | 27 | 100% annotated, 81.5% consensus, 88.9% category accuracy (with LLM) |
-| 6 | T7 Phage | 60 | Complete (triage + structural search results available) |
+All case studies re-run with full current pipeline: triage + Foldseek + MLP classifier + disorder. LLM classification not tested (no API key). STARLING search not available (FAISS index not installed). Previous results archived to `case_studies/_archive_2026-02-21/`.
+
+| # | Name | Proteins | Overall Acc | Functional Acc | Notes |
+|---|------|:--------:|:-----------:|:--------------:|-------|
+| 1 | SARS-CoV-2 | 18 | 72.2% | 78.6% | 1 dark matter (ORF9b), host_interaction weak |
+| 2 | Remote Homology | 10 | Pending | Pending | Not yet re-run |
+| 3 | Metagenomic Dark Matter | 30 | Pending | Pending | Not yet re-run |
+| 4 | crAssphage ORFans | 37 | — | — | Deprioritized (phage focus) |
+| 5 | Eukaryotic Viruses | 27 | 77.8% | 77.8% | 100% annotated, 0 dark matter |
+| 6 | T7 Phage | 60 | 56.7% | 72.1% | 3 dark matter, MLP over-classifies unknowns |
+
+**Aggregate (105 proteins)**: 64.8% overall, 75.0% functional (GT != unknown).
+
+**Accuracy by classification source**:
+| Source | Functional Accuracy | Notes |
+|--------|:-------------------:|-------|
+| Embedding triage | ~93% | Reliable backbone; excellent on well-annotated references |
+| Foldseek keywords | ~100% | When hit description is specific |
+| MLP classifier | ~22% | Net-negative; over-classifies unknowns; needs abstain threshold |
+
+**Consistent findings**:
+- Embedding triage is the reliable backbone (~93% on functional proteins)
+- MLP classifier is net-negative (over-classifies ALL truly unknown proteins)
+- host_interaction is consistently the hardest category (20-22%)
+- LLM classification expected to help but was not tested (no API key)
 
 ## Known Issues
 
+- **MLP classifier over-classifies unknowns**: All 11 truly unknown T7 proteins and 4 unknown SARS-CoV-2 proteins were given incorrect functional labels. The classifier needs an abstain threshold (softmax entropy or confidence cutoff) to avoid net-negative accuracy impact. Consider disabling with `--no-classify` until fixed.
+- **"movement" category applied to phage proteins**: Plant virus cell-to-cell movement concept incorrectly assigned to bacteriophage proteins (T7 gp4.2, gp6.7). Classifier should suppress this category for phage contexts.
+- **Keyword mapping gaps**: "Inhibitor of dGTPase" (→host_interaction), "Nucleotide kinase" (→replication), "DNA maturase" (→packaging) lack category mappings in keyword classifier.
+- **MPS OOM on large proteins**: Proteins >~1200aa cause MPS out of memory during encoder attention matrix computation. Use `--device cpu` as workaround.
+- **Model loading bottleneck**: ProstT5 (11.3 GB) takes 25-37 minutes to load on CPU. Dominates runtime when triage catches most proteins. ONNX backend reduces this to ~5s.
 - **LoRA adapter not yet trained**: Code complete but training requires CUDA GPU. MPS too slow (~60 sec/batch). Run on A100/H100: `scripts/train_contrastive.py --device cuda`.
 
 ## Remaining Work
 
-### Immediate (before release)
-- **Train contrastive LoRA adapter** (deferred -- needs CUDA): Code ready, run on A100/H100. Marginal value at current stage (83.5% precision limited by annotation quality, not embedding quality)
-- **Manuscript / Application Note**: Bioinformatics Application Note with case studies
+### Immediate
+- **Fix MLP classifier over-classification**: Add softmax entropy abstain threshold so classifier does not label every unknown protein. Currently net-negative on accuracy.
+- **Add keyword mappings**: "Inhibitor of dGTPase"→host_interaction, "Nucleotide kinase"→replication, "DNA maturase"→packaging
+- **Suppress "movement" for phage**: Classifier should not predict plant-virus-specific categories for phage proteins
+- **Re-run case studies with LLM classification**: Set ANTHROPIC_API_KEY and re-run to evaluate LLM impact on host_interaction and accessory protein classification
 
 ### Medium-term
 - **Metagenomic input metadata**: Parse VirSorter2 score TSV, geNomad taxonomy TSV, VIBRANT quality TSV to carry upstream viral classification through to output. (Output export to anvi'o/vConTACT2/3/DRAM-v/GFF3 is COMPLETE via `vhold export`.)
-- **Docker container**: Package vHold + ProstT5 + Foldseek + databases for Biocontainers/Docker Hub
 - **Iterative label refinement**: Use v3 classifier as filter for another round of LLM label agreement filtering
 - **Batch processing improvements**: Batch same-length sequences for ProstT5
 

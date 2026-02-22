@@ -50,6 +50,7 @@ test_output_real/
 # Case study results (large files)
 case_studies/*/results/
 !case_studies/*/results/.gitkeep
+case_studies/_archive*/
 
 # Large data files
 case_studies/metagenomic_dark_matter/sotus.palmprint.faa*

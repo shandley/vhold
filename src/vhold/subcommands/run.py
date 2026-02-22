@@ -55,6 +55,7 @@ def run_pipeline(
     go_transfer_threshold: float = 0.5,
     go_reliability_threshold: float = 0.3,
     cross_domain: bool = True,
+    cross_domain_threshold: float = 0.95,
 ) -> None:
     """Run the full vhold annotation pipeline.
 
@@ -114,6 +115,8 @@ def run_pipeline(
         "go_transfer_k": go_transfer_k,
         "go_transfer_threshold": go_transfer_threshold,
         "go_reliability_threshold": go_reliability_threshold,
+        "cross_domain": cross_domain,
+        "cross_domain_threshold": cross_domain_threshold,
     }
 
     # ========================================
@@ -327,6 +330,8 @@ def run_pipeline(
                 k=go_transfer_k,
                 threshold=go_transfer_threshold,
                 reliability_threshold=go_reliability_threshold,
+                cross_domain_threshold=cross_domain_threshold,
+                cross_domain=cross_domain,
                 device=device,
                 model_dir=Path(model_dir) if model_dir else None,
                 batch_size=batch_size,
@@ -339,6 +344,19 @@ def run_pipeline(
                 f"GO transfer: {n_with_go}/{len(go_transfer_results)} proteins "
                 f"received GO terms, {n_cross} cross-domain"
             )
+
+            # Step 1c.1: Filter implausible cross-domain GO terms
+            if go_transfer_results and swissprot_db.viral_go_ids:
+                from vhold.features.go_filter import filter_cross_domain_go_terms
+
+                logger.info("Step 1c.1: Filtering cross-domain GO terms...")
+                go_transfer_results = filter_cross_domain_go_terms(
+                    results=go_transfer_results,
+                    viral_go_ids=swissprot_db.viral_go_ids,
+                    llm_validate=llm_classify,
+                    llm_model=llm_model,
+                )
+
             logger.info("")
         else:
             logger.info(

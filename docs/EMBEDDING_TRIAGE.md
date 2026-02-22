@@ -96,10 +96,10 @@ Merge results with provenance
 | faiss-cpu | -- | Optional (large batch optimization) |
 | MMseqs2 / DIAMOND | -- | Not needed |
 
-## Empirical Answers (from calibration across 85 proteins, 4 case studies)
+## Empirical Observations
 
-### 1. Similarity threshold: 0.90 is optimal
-Calibrated across SARS-CoV-2 (18), remote homology (10), metagenomic dark matter (30), and eukaryotic viruses (27). At threshold 0.90: 100% recall (all 85 test proteins have similarity >= 0.904), 83.5% precision, F1=0.910. Higher thresholds (0.95, 0.97) sacrifice recall without meaningful precision gains. Lower thresholds (0.80, 0.85) add no recall but may introduce noise on other datasets. A single threshold works well across all case studies — no need for per-category thresholds.
+### 1. Similarity threshold: 0.90 is the default
+Early calibration suggested 0.90 balances recall and precision. This needs re-validation with the full integrated pipeline (triage + Foldseek + classifier + LLM + disorder).
 
 ### 2. ProstT5 encoder works well — no need for separate ProtT5
 ProstT5 encoder embeddings produce biologically sensible clusters. Related proteins (e.g., spike proteins, polymerases) cluster together with high cosine similarity. The fine-tuning did not degrade embedding quality for homology detection. Using ProstT5 avoids a separate model download and reuses the model already loaded for 3Di prediction.
@@ -128,25 +128,11 @@ It also complements:
 
 ## Measured Impact
 
-**SARS-CoV-2 end-to-end test** (18 proteins, `--triage --llm-classify`):
-- 18/18 proteins matched by embedding triage (100% at threshold 0.90)
-- Decoder + Foldseek steps completely skipped
-- Total runtime: ~4.5 minutes (vs ~45+ min without triage) = **~10x speedup**
-- LLM reclassified 6/10 unknown proteins correctly
-- Zero errors, zero dark matter
+Previous case study results were run at different development stages and are no longer current. Case studies are being re-run with the full integrated pipeline to produce accurate numbers.
 
-**Calibration across 85 proteins** (4 case studies):
-
-| Configuration | Precision | F1 |
-|--------------|-----------|------|
-| Bare embeddings | 29.4% | — |
-| + Enriched BFVD metadata (345K UniProt) | 67.1% | 0.803 |
-| + Keyword classification fixes | 77.6% | 0.874 |
-| + LLM reclassification (Claude Haiku) | **83.5%** | **0.910** |
-
-For well-characterized virus proteomes (SARS-CoV-2, influenza, HIV): most proteins matched by embedding, decoder completely skipped.
-
-For novel metagenomic viruses: most proteins go through full structural search, triage correctly identifies the few with known homologs.
+**Expected behavior**:
+- For well-characterized virus proteomes: most proteins matched by embedding, decoder skipped
+- For novel metagenomic viruses: most proteins go through full structural search, triage correctly identifies the few with known homologs
 
 ## Model Quantization: Accelerating What Remains
 

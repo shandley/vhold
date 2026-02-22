@@ -283,15 +283,16 @@ Proteins without confident annotations are reported in the dark matter output fo
 
 The `case_studies/` directory contains worked examples demonstrating vHold across different use cases:
 
-| # | Name | Proteins | Key Result |
-|---|------|----------|------------|
-| 1 | SARS-CoV-2 | 18 | Pipeline validation: 55.6% annotated, 100% structural protein accuracy |
-| 2 | Remote Homology | 10 | 100% annotated, 91.7% of Viro3D hits in twilight zone (<20% identity) |
-| 3 | Metagenomic Dark Matter | 30 | 83.3% annotated, 72% at remote homolog level (30-70% identity) |
-| 4 | crAssphage ORFans | 37 | Gut phage annotation (setup phase) |
-| 5 | Eukaryotic Viruses | 27 | 100% annotated across 7 mammalian virus families |
+| # | Name | Proteins | Description |
+|---|------|----------|-------------|
+| 1 | SARS-CoV-2 | 18 | Complete proteome with experimentally verified ground truth |
+| 2 | Remote Homology | 10 | Proteins with known structure but low sequence identity |
+| 3 | Metagenomic Dark Matter | 30 | Uncharacterized viral proteins from metagenomes |
+| 4 | crAssphage ORFans | 37 | Gut phage ORFan annotation |
+| 5 | Eukaryotic Viruses | 27 | Diverse mammalian viruses (7 families) |
+| 6 | T7 Phage | 60 | Well-characterized phage proteome |
 
-See [case_studies/README.md](case_studies/README.md) for detailed results and methodology.
+See [case_studies/README.md](case_studies/README.md) for methodology.
 
 ## License
 

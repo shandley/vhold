@@ -35,6 +35,7 @@ from vhold.databases.swissprot import (
     load_swissprot_metadata,
 )
 from vhold.utils.constants import (
+    DEFAULT_CROSS_DOMAIN_THRESHOLD,
     DEFAULT_GO_TRANSFER_K,
     DEFAULT_GO_TRANSFER_THRESHOLD,
     DEFAULT_RELIABILITY_THRESHOLD,
@@ -157,6 +158,7 @@ class SwissProtReferenceDB:
         self.protein_ids: list[str] = []
         self.metadata: dict[str, SwissProtEntry] = {}
         self._loaded = False
+        self._viral_go_ids: set[str] | None = None
 
     def load(self) -> None:
         """Load embeddings and metadata into memory."""
@@ -176,7 +178,21 @@ class SwissProtReferenceDB:
         # Load metadata
         self.metadata = load_swissprot_metadata(self.scope, self.db_dir)
 
+        # Compute viral GO set for plausibility filtering
+        from vhold.features.go_filter import build_viral_go_set
+
+        viral_go_set = build_viral_go_set(self.metadata)
+        self._viral_go_ids = viral_go_set
+        logger.info(f"Viral GO set: {len(viral_go_set)} unique GO IDs")
+
         self._loaded = True
+
+    @property
+    def viral_go_ids(self) -> set[str]:
+        """GO IDs from viral Swiss-Prot entries (for plausibility filtering)."""
+        if self._viral_go_ids is None:
+            return set()
+        return self._viral_go_ids
 
     @property
     def size(self) -> int:
@@ -243,6 +259,8 @@ def transfer_go_terms(
     metadata: dict[str, SwissProtEntry],
     threshold: float = DEFAULT_GO_TRANSFER_THRESHOLD,
     reliability_threshold: float = DEFAULT_RELIABILITY_THRESHOLD,
+    cross_domain_threshold: float = DEFAULT_CROSS_DOMAIN_THRESHOLD,
+    cross_domain: bool = True,
 ) -> GOTransferResult:
     """Transfer GO terms from k nearest Swiss-Prot neighbors.
 
@@ -250,6 +268,10 @@ def transfer_go_terms(
     - Per-donor RI = cosine_similarity (following FANTASIA)
     - Combined RI = 1 - prod(1 - RI_i) across all donors with that term
     - Filter by reliability_threshold
+
+    Domain-aware filtering: non-viral donors must exceed
+    ``cross_domain_threshold`` (default 0.95) to contribute GO terms.
+    When ``cross_domain=False``, all non-viral donors are excluded.
 
     Cross-domain flag is set when any donor's lineage does not start
     with "Viruses".
@@ -260,6 +282,8 @@ def transfer_go_terms(
         metadata: Swiss-Prot metadata dict
         threshold: Minimum similarity (matches below are excluded)
         reliability_threshold: Minimum combined RI to keep a GO term
+        cross_domain_threshold: Minimum similarity for non-viral donors
+        cross_domain: Whether to include non-viral donors at all
 
     Returns:
         GOTransferResult with transferred GO terms
@@ -292,6 +316,13 @@ def transfer_go_terms(
         entry = metadata.get(acc)
         if entry is None:
             continue
+
+        # Domain-aware filtering: non-viral donors need higher similarity
+        if not entry.is_viral:
+            if not cross_domain:
+                continue  # Skip all non-viral donors
+            if sim < cross_domain_threshold:
+                continue  # Below cross-domain threshold
 
         for go_ann in entry.go_annotations:
             key = (go_ann.go_id, go_ann.aspect)
@@ -358,6 +389,8 @@ def run_go_transfer(
     k: int = DEFAULT_GO_TRANSFER_K,
     threshold: float = DEFAULT_GO_TRANSFER_THRESHOLD,
     reliability_threshold: float = DEFAULT_RELIABILITY_THRESHOLD,
+    cross_domain_threshold: float = DEFAULT_CROSS_DOMAIN_THRESHOLD,
+    cross_domain: bool = True,
     device: str = "auto",
     model_dir: Path | None = None,
     batch_size: int = 32,
@@ -382,6 +415,8 @@ def run_go_transfer(
         k: Number of nearest neighbors
         threshold: Minimum cosine similarity
         reliability_threshold: Minimum RI to keep a GO term
+        cross_domain_threshold: Minimum similarity for non-viral donors
+        cross_domain: Whether to include non-viral donors
         device: Device for embedding extraction
         model_dir: Model cache directory
         batch_size: Batch size for embedding extraction
@@ -447,6 +482,8 @@ def run_go_transfer(
             metadata=swissprot_db.metadata,
             threshold=threshold,
             reliability_threshold=reliability_threshold,
+            cross_domain_threshold=cross_domain_threshold,
+            cross_domain=cross_domain,
         )
         results[qid] = result
 

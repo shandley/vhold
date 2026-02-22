@@ -175,8 +175,8 @@ class TestTransferGoTerms:
         assert not result.has_terms
 
     def test_cross_domain_detection(self, metadata):
-        """Non-viral donors are flagged as cross-domain."""
-        matches = [("P00720", 0.75)]  # Bacterial entry
+        """Non-viral donors are flagged as cross-domain when above threshold."""
+        matches = [("P00720", 0.96)]  # Bacterial entry, above default 0.95
         result = transfer_go_terms(
             "query", matches, metadata, threshold=0.5, reliability_threshold=0.3
         )
@@ -189,7 +189,7 @@ class TestTransferGoTerms:
 
     def test_cross_domain_mixed(self, metadata):
         """Cross-domain flag set when any donor is non-viral."""
-        matches = [("P0DTC2", 0.85), ("P00720", 0.65)]
+        matches = [("P0DTC2", 0.85), ("P00720", 0.96)]
         result = transfer_go_terms(
             "query", matches, metadata, threshold=0.5, reliability_threshold=0.3
         )
@@ -257,13 +257,82 @@ class TestTransferGoTerms:
 
     def test_terms_sorted_by_ri(self, metadata):
         """Transferred terms are sorted by RI descending."""
-        matches = [("P0DTC2", 0.85), ("P00720", 0.65)]
+        matches = [("P0DTC2", 0.85), ("P00720", 0.96)]
         result = transfer_go_terms(
             "query", matches, metadata, threshold=0.5, reliability_threshold=0.3
         )
 
         ris = [t.reliability_index for t in result.go_terms]
         assert ris == sorted(ris, reverse=True)
+
+    def test_cross_domain_threshold_filtering(self, metadata):
+        """Non-viral donors below cross_domain_threshold are excluded."""
+        # Bacterial entry at 0.85 is below default 0.95 threshold
+        matches = [("P00720", 0.85)]
+        result = transfer_go_terms(
+            "query", matches, metadata, threshold=0.5, reliability_threshold=0.3,
+        )
+
+        # Cross-domain flag is set (match exists), but no terms transferred
+        assert result.is_cross_domain
+        assert not result.has_terms
+
+    def test_cross_domain_threshold_allows_high_sim(self, metadata):
+        """Non-viral donors above cross_domain_threshold contribute terms."""
+        matches = [("P00720", 0.96)]
+        result = transfer_go_terms(
+            "query", matches, metadata, threshold=0.5, reliability_threshold=0.3,
+        )
+
+        assert result.is_cross_domain
+        assert result.has_terms
+        assert len(result.go_terms) == 2  # lysozyme + peptidoglycan
+
+    def test_cross_domain_threshold_custom(self, metadata):
+        """Custom cross_domain_threshold overrides default."""
+        matches = [("P00720", 0.80)]
+        result = transfer_go_terms(
+            "query", matches, metadata, threshold=0.5, reliability_threshold=0.3,
+            cross_domain_threshold=0.7,  # Lower threshold
+        )
+
+        assert result.has_terms  # 0.80 >= 0.70
+
+    def test_cross_domain_disabled(self, metadata):
+        """cross_domain=False excludes all non-viral donors."""
+        matches = [("P00720", 0.99)]  # Very high sim, but non-viral
+        result = transfer_go_terms(
+            "query", matches, metadata, threshold=0.5, reliability_threshold=0.3,
+            cross_domain=False,
+        )
+
+        assert result.is_cross_domain  # Flag still set (match exists)
+        assert not result.has_terms  # But no terms transferred
+
+    def test_cross_domain_disabled_viral_unaffected(self, metadata):
+        """cross_domain=False does not affect viral donors."""
+        matches = [("P0DTC2", 0.85)]
+        result = transfer_go_terms(
+            "query", matches, metadata, threshold=0.5, reliability_threshold=0.3,
+            cross_domain=False,
+        )
+
+        assert result.has_terms
+        assert len(result.go_terms) == 3  # All viral terms still transferred
+
+    def test_cross_domain_mixed_threshold(self, metadata):
+        """Viral donor passes at low sim, non-viral filtered by threshold."""
+        matches = [("P0DTC2", 0.85), ("P00720", 0.85)]
+        result = transfer_go_terms(
+            "query", matches, metadata, threshold=0.5, reliability_threshold=0.3,
+        )
+
+        # Viral terms pass, bacterial terms filtered (0.85 < 0.95)
+        assert result.has_terms
+        viral_terms = [t for t in result.go_terms if not t.is_cross_domain]
+        cross_terms = [t for t in result.go_terms if t.is_cross_domain]
+        assert len(viral_terms) == 3  # All viral GO terms
+        assert len(cross_terms) == 0  # Bacterial filtered out
 
 
 # ============================================================================

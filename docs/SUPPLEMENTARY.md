@@ -477,35 +477,7 @@ loguru >= 0.7.0
 
 ## S8. Example Analysis
 
-### S8.1 Test Dataset
-
-Three well-characterized viral proteins were used for validation:
-
-1. **T4 phage gp23 major capsid protein** (P04535)
-   - Length: 521 aa
-   - Expected: Structural (capsid)
-
-2. **HIV-1 protease** (O90777)
-   - Length: 99 aa
-   - Expected: Protease
-
-3. **SARS-CoV-2 nucleocapsid** (P0DTC9)
-   - Length: 419 aa
-   - Expected: Structural (nucleocapsid)
-
-### S8.2 Results Summary
-
-| Protein | Category | Confidence | Consensus | Agreement |
-|---------|----------|------------|-----------|-----------|
-| T4 gp23 | structural | high | 1.03 | single |
-| HIV protease | protease | high | 1.00 | agree |
-| SARS-CoV-2 N | structural | high | 1.00 | agree |
-
-- **Annotation rate**: 100% (3/3)
-- **Multi-database consensus**: 67% (2/3)
-- **Dark matter**: 0% (0/3)
-
-All proteins correctly classified to expected functional categories with high confidence.
+Example analysis results will be updated after case studies are re-run with the full integrated pipeline (triage + Foldseek + classifier + disorder + LLM + neighborhood voting).
 
 ## S9. Cross-Database Validation Framework
 

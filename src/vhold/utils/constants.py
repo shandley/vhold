@@ -167,6 +167,7 @@ def get_onnx_model_dir() -> Path:
 DEFAULT_GO_TRANSFER_K = 3  # Number of nearest neighbors for GO transfer
 DEFAULT_GO_TRANSFER_THRESHOLD = 0.5  # Min cosine similarity to transfer
 DEFAULT_RELIABILITY_THRESHOLD = 0.3  # Min combined RI to keep GO term
+DEFAULT_CROSS_DOMAIN_THRESHOLD = 0.95  # Min cosine similarity for non-viral donors
 EXPERIMENTAL_EVIDENCE_CODES = frozenset(
     {"EXP", "IDA", "IPI", "IMP", "IGI", "IEP", "TAS", "IC"}
 )

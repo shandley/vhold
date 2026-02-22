@@ -468,6 +468,12 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     help="Include non-viral Swiss-Prot matches for cross-domain discovery (default: yes)",
 )
 @click.option(
+    "--cross-domain-threshold",
+    default=0.95,
+    type=float,
+    help="Min cosine similarity for non-viral donor GO transfer (default: 0.95)",
+)
+@click.option(
     "--gene-caller",
     type=click.Choice(["auto", "pyrodigal", "none"]),
     default="none",
@@ -500,7 +506,7 @@ def run(
     use_starling_search, starling_similarity_threshold,
     input_format, genome_fasta, include_mat_peptide, export_formats,
     go_transfer, go_transfer_k, go_transfer_threshold,
-    go_reliability_threshold, cross_domain,
+    go_reliability_threshold, cross_domain, cross_domain_threshold,
     gene_caller, translation_table, closed, min_gene,
 ):
     """Run the full vhold annotation pipeline.
@@ -627,6 +633,7 @@ def run(
         go_transfer_threshold=go_transfer_threshold,
         go_reliability_threshold=go_reliability_threshold,
         cross_domain=cross_domain,
+        cross_domain_threshold=cross_domain_threshold,
     )
 
 
