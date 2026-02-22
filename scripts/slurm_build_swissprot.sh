@@ -2,7 +2,7 @@
 #SBATCH -p gpu
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 #SBATCH --time=8:00:00
 #SBATCH -J swissprot_build
 #SBATCH -o swissprot_%j.log
@@ -26,6 +26,9 @@
 # =============================================================================
 
 set -euo pipefail
+
+# Force unbuffered Python output so logs appear in real-time
+export PYTHONUNBUFFERED=1
 
 SCOPE="${1:-viral}"
 OUTPUT_DIR="${HOME}/.vhold/databases/swissprot"

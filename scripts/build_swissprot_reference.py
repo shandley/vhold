@@ -134,7 +134,7 @@ def parse_swissprot_xml(
     n_skipped_no_go = 0
     n_skipped_no_seq = 0
 
-    print(f"Parsing Swiss-Prot XML (scope={scope}, require_go={require_go})...")
+    print(f"Parsing Swiss-Prot XML (scope={scope}, require_go={require_go})...", flush=True)
     start_time = time.time()
 
     # Open gzipped XML
@@ -144,18 +144,30 @@ def parse_swissprot_xml(
         fh = open(xml_path, "rb")
 
     try:
-        context = ET.iterparse(fh, events=("end",))
+        # Use start/end events so we can track the root element and
+        # delete processed entries from it to free memory.
+        context = ET.iterparse(fh, events=("start", "end"))
+        root = None
 
-        for _event, elem in context:
-            if elem.tag != f"{UNIPROT_NS}entry":
+        for event, elem in context:
+            if event == "start" and root is None:
+                root = elem  # Capture the <uniprot> root element
+                continue
+            if event != "end" or elem.tag != f"{UNIPROT_NS}entry":
                 continue
 
             n_total += 1
 
+            def _clear_elem():
+                """Clear element and remove from root to free memory."""
+                elem.clear()
+                if root is not None:
+                    root.remove(elem)
+
             # Extract accession
             acc_elem = elem.find(f"{UNIPROT_NS}accession")
             if acc_elem is None or acc_elem.text is None:
-                elem.clear()
+                _clear_elem()
                 continue
             accession = acc_elem.text
 
@@ -184,7 +196,7 @@ def parse_swissprot_xml(
             # Filter by scope
             if scope == "viral" and not lineage.startswith("Viruses"):
                 n_skipped_scope += 1
-                elem.clear()
+                _clear_elem()
                 continue
 
             # Extract sequence
@@ -196,7 +208,7 @@ def parse_swissprot_xml(
                 length = len(sequence)
             if not sequence:
                 n_skipped_no_seq += 1
-                elem.clear()
+                _clear_elem()
                 continue
 
             # Extract GO annotations with experimental evidence
@@ -241,7 +253,7 @@ def parse_swissprot_xml(
             # Filter: require at least one experimental GO annotation
             if require_go and not go_annotations:
                 n_skipped_no_go += 1
-                elem.clear()
+                _clear_elem()
                 continue
 
             entries.append(
@@ -261,11 +273,12 @@ def parse_swissprot_xml(
                 elapsed = time.time() - start_time
                 print(
                     f"  Processed {n_total:,} entries, "
-                    f"kept {len(entries):,} ({elapsed:.0f}s)"
+                    f"kept {len(entries):,} ({elapsed:.0f}s)",
+                    flush=True,
                 )
 
-            # Clear element to free memory
-            elem.clear()
+            # Clear element and remove from root to free memory
+            _clear_elem()
     finally:
         fh.close()
 
