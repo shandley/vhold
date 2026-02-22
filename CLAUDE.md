@@ -2,13 +2,44 @@
 
 Last updated: 2026-02-22
 
-## Project Overview
+## Project Status: SUNSET
 
-**vHold** is a viral protein annotation tool using structural homology (ProstT5 + Foldseek). It extends pHold's phage-focused capabilities to include eukaryotic viruses.
+**vHold development is paused.** After strategic review, the FANTASIA-style GO transfer layer (vHold's unique contribution) does not justify a standalone tool:
+- **pHold** already handles structural annotation (ProstT5 + Foldseek)
+- **Phynteny** does synteny-based functional prediction far better than vHold's neighborhood voting (LSTM/transformer on 280K genomes, AUC>0.84)
+- vHold's remaining value is lightweight utility modules (gene calling, Foldseek/FoldMason wrappers, functional classification, metagenomic export)
 
-### Key Differentiator
-- **pHold**: Targets bacteriophages
-- **vHold**: Targets ALL viruses including mammalian/eukaryotic viruses
+**Portable components are being migrated to ViroSense** (`~/Code/tools/virosense`), which uses Evo2 DNA foundation model for viral detection and will integrate structural annotation via ColabFold + BFVD + Foldseek + FoldMason.
+
+See: `~/Code/tools/virosense/annotate/` for the new integration work.
+
+## What This Codebase Contains (reference only)
+
+vHold was a viral protein annotation tool using structural homology (ProstT5 + Foldseek). It extended pHold with FANTASIA-style GO term transfer from Swiss-Prot. The codebase contains ~870 tests and extensive implementation that is no longer being actively developed.
+
+### Portable modules (migrating to ViroSense)
+| Module | vHold source | Purpose |
+|--------|-------------|---------|
+| Gene calling (Pyrodigal-gv) | `features/genecall.py` | ORF prediction from viral contigs |
+| Foldseek search | `features/foldseek.py` | Structural search against BFVD |
+| FoldMason alignment | `features/foldmason.py` | Multiple structural alignment |
+| BFVD database management | `databases/bfvd.py` | Download, path management, metadata |
+| Functional classification | `results/categories.py` | Keyword/Pfam/GO → 11 categories |
+| Consensus scoring | `results/annotations.py` | Hit scoring + agreement |
+| GO term resolution | `results/go_terms.py` | OBO name→ID map |
+| Metagenomic export | `results/export.py` | anvi'o, DRAM-v, vConTACT2/3, GFF3 |
+| GenBank/GFF3 I/O | `io/genbank.py`, `io/gff.py` | Input format support |
+
+### NOT migrating (ProstT5-dependent)
+| Module | Why not |
+|--------|---------|
+| ProstT5 encoder/decoder | Replaced by ColabFold + AlphaFold DB |
+| Embedding triage (436K DB) | ProstT5-dependent |
+| MLP classifiers | ProstT5-dependent |
+| FANTASIA GO transfer | ProstT5 + Swiss-Prot dependent |
+| ONNX backend | ProstT5-specific |
+| LoRA / contrastive training | ProstT5-specific |
+| Disorder pipeline (STARLING) | Low priority |
 
 ## Architecture
 
@@ -184,7 +215,7 @@ Lightweight MLP trained on frozen ProstT5 encoder embeddings to classify viral p
 
 **Agreement filtering insight**: Text-based labels and structure-based predictions are complementary signals. Labels where both agree are high-quality; labels where they disagree are noisy. This principle could be applied iteratively.
 
-**Real-world performance** (2026-02-21, 3 case studies, 105 proteins): MLP classifier achieves ~22% accuracy on functional proteins and 0% on truly unknown proteins (over-classifies all of them). Net-negative impact on overall accuracy — pipeline accuracy drops from ~80% to ~60% due to MLP over-classification. **Recommendation**: Add softmax entropy abstain threshold or disable with `--no-classify` until retrained.
+**Real-world performance** (2026-02-21, 3 case studies, 105 proteins): Without entropy filter, MLP over-classifies all unknown proteins (0% accuracy on unknowns). Entropy-based abstain threshold added (`--classifier-entropy`, default 0.6) — classifier now abstains when normalized softmax entropy exceeds threshold. Combined with `--classifier-confidence` (default 0.5) for dual filtering. Needs re-validation on case studies.
 
 ### Contrastive LoRA Fine-Tuning (`--lora/--no-lora`) -- CODE COMPLETE, NEEDS CUDA
 
@@ -408,7 +439,7 @@ FANTASIA-style GO term transfer from Swiss-Prot reference proteins via ProstT5 e
 - Post-processing step using Claude to reclassify proteins where keywords return "unknown"
 - **Auto-enabled** when `ANTHROPIC_API_KEY` is set; `--no-llm` to opt out
 - Targets `classification_source in ("keywords", "embedding")` AND `functional_category == "unknown"`
-- Resolves: SARS-CoV-2 accessory proteins (ORF3a/6/7a/8), paramyxovirus V/C proteins, Ebola VP35, Rabies M2
+- Resolves proteins with ambiguous keyword annotations (e.g., accessory proteins, hypothetical proteins)
 - 3-layer graceful degradation: no anthropic package, no API key, per-protein API errors
 - Default model: `claude-haiku-4-5-20251001` (configurable via `--llm-model`)
 - Cost: ~$0.01 per run
@@ -442,37 +473,36 @@ vhold align -i proteins.fasta -o alignment/ --device cpu --fast -t 8
 
 **Pipeline**: Input FASTA -> ProstT5 3Di -> confidence masking -> Foldseek DB -> FoldMason `structuremsa` (fastMode) -> AA MSA + 3Di MSA + guide tree
 
-## Case Studies (re-run 2026-02-21)
+## Case Studies
 
-All case studies re-run with full current pipeline: triage + Foldseek + MLP classifier + disorder. LLM classification not tested (no API key). STARLING search not available (FAISS index not installed). Previous results archived to `case_studies/_archive_2026-02-21/`.
+Case studies are focused on bacteriophage annotation, which is the primary use case for FANTASIA-style GO transfer. Previous results archived to `case_studies/_archive_2026-02-21/`.
 
-| # | Name | Proteins | Overall Acc | Functional Acc | Notes |
-|---|------|:--------:|:-----------:|:--------------:|-------|
-| 1 | SARS-CoV-2 | 18 | 72.2% | 78.6% | 1 dark matter (ORF9b), host_interaction weak |
-| 2 | Remote Homology | 10 | Pending | Pending | Not yet re-run |
-| 3 | Metagenomic Dark Matter | 30 | Pending | Pending | Not yet re-run |
-| 4 | crAssphage ORFans | 37 | — | — | Deprioritized (phage focus) |
-| 5 | Eukaryotic Viruses | 27 | 77.8% | 77.8% | 100% annotated, 0 dark matter |
-| 6 | T7 Phage | 60 | 56.7% | 72.1% | 3 dark matter, MLP over-classifies unknowns |
+| # | Name | Proteins | Status | Priority | Notes |
+|---|------|:--------:|--------|:--------:|-------|
+| 1 | SARS-CoV-2 | 18 | Has results | Low | Pipeline validation baseline, not primary use case |
+| 2 | Remote Homology | 10 | Needs rebuild | Medium | Currently all RNA viruses — rebuild with phage proteins |
+| 3 | Metagenomic Dark Matter | 30 | Needs rebuild | Medium | Currently 30 RdRp fragments — replace with phage contigs |
+| 4 | crAssphage ORFans | 37 | Pending re-run | **High** | Most abundant gut phage, ~50% unknown ORFs, ideal GO transfer test |
+| 5 | Eukaryotic Viruses | 27 | Deprioritized | Low | Not primary use case |
+| 6 | T7 Phage | 60 | Has results | **High** | Gold standard, complete ground truth, GO transfer validated |
 
-**Aggregate (105 proteins)**: 64.8% overall, 75.0% functional (GT != unknown).
+**Priority case studies for manuscript**:
+1. **T7 Phage** — Complete proteome, decades of literature, balanced across all 11 categories, 13 genuinely unknown ORFs. Already used for GO transfer validation (25/40 implausible cross-domain terms removed).
+2. **crAssphage ORFans** — THE use case. Most abundant virus in the human gut, ~50% of proteins completely uncharacterized. Can GO transfer from well-characterized phages illuminate crAssphage dark matter?
+3. **Metagenomic phage contigs** — Real phage contigs from gut/ocean metagenomes (needs rebuild from current palmdb RdRp fragments)
+4. **SARS-CoV-2** — Baseline validation, well-known and reproducible
 
-**Accuracy by classification source**:
+**Previous results (2026-02-21, before entropy fix and GO transfer)**:
+
 | Source | Functional Accuracy | Notes |
 |--------|:-------------------:|-------|
-| Embedding triage | ~93% | Reliable backbone; excellent on well-annotated references |
+| Embedding triage | ~93% | Reliable backbone |
 | Foldseek keywords | ~100% | When hit description is specific |
-| MLP classifier | ~22% | Net-negative; over-classifies unknowns; needs abstain threshold |
-
-**Consistent findings**:
-- Embedding triage is the reliable backbone (~93% on functional proteins)
-- MLP classifier is net-negative (over-classifies ALL truly unknown proteins)
-- host_interaction is consistently the hardest category (20-22%)
-- LLM classification expected to help but was not tested (no API key)
+| MLP classifier | ~22% | Net-negative; over-classifies unknowns (entropy fix pending validation) |
 
 ## Known Issues
 
-- **MLP classifier over-classifies unknowns**: All 11 truly unknown T7 proteins and 4 unknown SARS-CoV-2 proteins were given incorrect functional labels. The classifier needs an abstain threshold (softmax entropy or confidence cutoff) to avoid net-negative accuracy impact. Consider disabling with `--no-classify` until fixed.
+- **MLP classifier over-classification mitigated**: Added entropy-based abstain threshold (`--classifier-entropy`, default 0.6). Classifier now abstains when normalized softmax entropy exceeds threshold, preventing confident-but-wrong predictions on truly unknown proteins. Combined with existing `--classifier-confidence` (default 0.5) for dual filtering. Needs re-validation on case studies to confirm accuracy improvement.
 - **"movement" category applied to phage proteins**: Plant virus cell-to-cell movement concept incorrectly assigned to bacteriophage proteins (T7 gp4.2, gp6.7). Classifier should suppress this category for phage contexts.
 - **Keyword mapping gaps**: "Inhibitor of dGTPase" (→host_interaction), "Nucleotide kinase" (→replication), "DNA maturase" (→packaging) lack category mappings in keyword classifier.
 - **MPS OOM on large proteins**: Proteins >~1200aa cause MPS out of memory during encoder attention matrix computation. Use `--device cpu` as workaround.
@@ -482,13 +512,16 @@ All case studies re-run with full current pipeline: triage + Foldseek + MLP clas
 ## Remaining Work
 
 ### Immediate
-- **Fix MLP classifier over-classification**: Add softmax entropy abstain threshold so classifier does not label every unknown protein. Currently net-negative on accuracy.
+- ~~**Fix MLP classifier over-classification**~~: DONE — Added `--classifier-entropy` (default 0.6) entropy-based abstain threshold. Needs case study re-validation.
+- **Re-run T7 + crAssphage on HTCF**: Validate entropy fix + GO transfer end-to-end on priority phage case studies
 - **Add keyword mappings**: "Inhibitor of dGTPase"→host_interaction, "Nucleotide kinase"→replication, "DNA maturase"→packaging
 - **Suppress "movement" for phage**: Classifier should not predict plant-virus-specific categories for phage proteins
-- **Re-run case studies with LLM classification**: Set ANTHROPIC_API_KEY and re-run to evaluate LLM impact on host_interaction and accessory protein classification
+- **Rebuild Remote Homology case study**: Replace RNA virus proteins with phage proteins at twilight-zone identity
+- **Rebuild Metagenomic Dark Matter case study**: Replace palmdb RdRp fragments with real phage contigs from metagenomes
 
 ### Medium-term
-- **Metagenomic input metadata**: Parse VirSorter2 score TSV, geNomad taxonomy TSV, VIBRANT quality TSV to carry upstream viral classification through to output. (Output export to anvi'o/vConTACT2/3/DRAM-v/GFF3 is COMPLETE via `vhold export`.)
+- **Manuscript / Application Note**: Bioinformatics Application Note — pHold + FANTASIA-style GO transfer for phage annotation
+- **Metagenomic input metadata**: Parse VirSorter2 score TSV, geNomad taxonomy TSV, VIBRANT quality TSV
 - **Iterative label refinement**: Use v3 classifier as filter for another round of LLM label agreement filtering
 - **Batch processing improvements**: Batch same-length sequences for ProstT5
 

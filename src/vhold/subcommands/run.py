@@ -35,6 +35,7 @@ def run_pipeline(
     triage_threshold: float = 0.90,
     classify: bool = True,
     classifier_confidence: float = 0.5,
+    classifier_entropy: float = 0.6,
     backend: str = "torch",
     use_lora: bool = True,
     input_format: str | None = None,
@@ -644,6 +645,7 @@ def run_pipeline(
                     predictions = classify_with_model(
                         embeddings, ids, classifier,
                         confidence_threshold=classifier_confidence,
+                        entropy_threshold=classifier_entropy,
                     )
 
                     reclassified = 0

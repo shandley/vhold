@@ -372,6 +372,12 @@ def compare(predictions_dir, output, database, databases, threads, evalue, sensi
     help="Minimum confidence for MLP classifier predictions (default: 0.5)",
 )
 @click.option(
+    "--classifier-entropy",
+    default=0.6,
+    type=float,
+    help="Max normalized entropy for MLP classifier (0=certain, 1=uniform, default: 0.6)",
+)
+@click.option(
     "--backend",
     type=click.Choice(["torch", "onnx"]),
     default="torch",
@@ -501,7 +507,7 @@ def run(
     input_file, output, database, databases, threads, batch_size, device,
     evalue, sensitivity, confidence_threshold, model_dir, prefix,
     fast, llm_classify, llm_model, triage, triage_threshold,
-    classify, classifier_confidence, backend, lora,
+    classify, classifier_confidence, classifier_entropy, backend, lora,
     disorder, disorder_threshold, disorder_classifier_confidence,
     use_starling_search, starling_similarity_threshold,
     input_format, genome_fasta, include_mat_peptide, export_formats,
@@ -613,6 +619,7 @@ def run(
         triage_threshold=triage_threshold,
         classify=classify,
         classifier_confidence=classifier_confidence,
+        classifier_entropy=classifier_entropy,
         backend=backend,
         use_lora=lora,
         disorder=disorder,

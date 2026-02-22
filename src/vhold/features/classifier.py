@@ -111,6 +111,7 @@ def classify_with_model(
     protein_ids: list[str],
     classifier: FunctionalClassifier,
     confidence_threshold: float = 0.5,
+    entropy_threshold: float = 0.6,
     category_names: list[str] | None = None,
 ) -> dict[str, tuple[str, float]]:
     """Classify proteins using the trained MLP.
@@ -120,12 +121,15 @@ def classify_with_model(
         protein_ids: List of N protein IDs
         classifier: Loaded FunctionalClassifier
         confidence_threshold: Minimum softmax probability to accept prediction
+        entropy_threshold: Maximum normalized entropy to accept prediction
+            (0=certain, 1=uniform). Predictions with entropy above this
+            threshold are abstained. Default 0.6.
         category_names: Ordered category names (default: ALL_CATEGORIES)
 
     Returns:
         Dict mapping protein_id to (predicted_category, confidence).
-        Only includes proteins above the confidence threshold whose
-        predicted category is not "unknown".
+        Only includes proteins above the confidence threshold, below
+        the entropy threshold, and whose predicted category is not "unknown".
     """
     if category_names is None:
         category_names = ALL_CATEGORIES
@@ -137,17 +141,26 @@ def classify_with_model(
         probs = torch.softmax(logits, dim=-1)
         confidences, predictions = probs.max(dim=-1)
 
+        # Compute normalized entropy: H / ln(K), range [0, 1]
+        log_probs = torch.log(probs + 1e-10)
+        entropy = -(probs * log_probs).sum(dim=-1)
+        max_entropy = float(np.log(probs.shape[-1]))
+        normalized_entropy = entropy / max_entropy
+
     results = {}
     for i, protein_id in enumerate(protein_ids):
         pred_idx = predictions[i].item()
         conf = confidences[i].item()
+        norm_ent = normalized_entropy[i].item()
 
         if pred_idx >= len(category_names):
             continue
 
         category = category_names[pred_idx]
 
-        if conf >= confidence_threshold and category != "unknown":
+        if (conf >= confidence_threshold
+                and norm_ent <= entropy_threshold
+                and category != "unknown"):
             results[protein_id] = (category, conf)
 
     return results

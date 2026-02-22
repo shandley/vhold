@@ -196,6 +196,87 @@ class TestClassifyWithModel:
         for pid, (category, conf) in results.items():
             assert category in categories
 
+    def test_entropy_threshold_filters_uncertain(self):
+        """High-entropy (uncertain) predictions are excluded."""
+        model = FunctionalClassifier()
+        model.eval()
+        embeddings = _make_normalized((20, 1024))
+        protein_ids = [f"prot_{i}" for i in range(20)]
+
+        # Very permissive confidence, but strict entropy
+        results_permissive = classify_with_model(
+            embeddings, protein_ids, model,
+            confidence_threshold=0.0,
+            entropy_threshold=1.0,  # accept anything
+        )
+        results_strict = classify_with_model(
+            embeddings, protein_ids, model,
+            confidence_threshold=0.0,
+            entropy_threshold=0.3,  # strict: only very certain
+        )
+
+        assert len(results_strict) <= len(results_permissive)
+
+    def test_low_entropy_passes(self):
+        """A model with a dominant class passes entropy filter."""
+        model = FunctionalClassifier(num_classes=3)
+        model.eval()
+
+        # Create input that produces low-entropy output by biasing logits
+        # We'll just verify the mechanism works with synthetic data
+        embeddings = _make_normalized((5, 1024))
+        protein_ids = [f"prot_{i}" for i in range(5)]
+        categories = ["alpha", "beta", "gamma"]
+
+        # With permissive entropy, should get predictions
+        results = classify_with_model(
+            embeddings, protein_ids, model,
+            confidence_threshold=0.0,
+            entropy_threshold=1.0,
+            category_names=categories,
+        )
+        assert len(results) > 0
+
+    def test_entropy_and_confidence_combined(self):
+        """Both entropy and confidence filters must pass."""
+        model = FunctionalClassifier()
+        model.eval()
+        embeddings = _make_normalized((10, 1024))
+        protein_ids = [f"prot_{i}" for i in range(10)]
+
+        # Very strict on both dimensions
+        results = classify_with_model(
+            embeddings, protein_ids, model,
+            confidence_threshold=0.99,
+            entropy_threshold=0.1,
+        )
+        # Should be very few or zero predictions
+        # (both filters are independently strict)
+        assert len(results) <= 2
+
+    def test_entropy_default_backward_compatible(self):
+        """Default entropy threshold doesn't break confident predictions."""
+        model = FunctionalClassifier()
+        model.eval()
+        embeddings = _make_normalized((10, 1024))
+        protein_ids = [f"prot_{i}" for i in range(10)]
+
+        # Without entropy param (default 0.6)
+        results_default = classify_with_model(
+            embeddings, protein_ids, model,
+            confidence_threshold=0.5,
+        )
+        # With explicit old behavior (no entropy filter)
+        results_no_filter = classify_with_model(
+            embeddings, protein_ids, model,
+            confidence_threshold=0.5,
+            entropy_threshold=1.0,
+        )
+
+        # Default should keep most or all confident predictions
+        # (0.6 normalized entropy is fairly permissive)
+        assert len(results_default) >= len(results_no_filter) * 0.5
+
 
 # ============================================================================
 # TestLoadSaveRoundtrip

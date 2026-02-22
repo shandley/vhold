@@ -1,19 +1,19 @@
 # vHold Case Studies
 
-This directory contains worked examples demonstrating vHold's annotation capabilities.
+This directory contains worked examples demonstrating vHold's phage annotation capabilities, with focus on FANTASIA-style GO term transfer from well-characterized to poorly-characterized phages.
 
-Previous results (run at different development stages with different feature sets) are archived in `_archive_2026-02-21/`. All case studies are being re-run with the full integrated pipeline.
+Previous results (run at different development stages with different feature sets) are archived in `_archive_2026-02-21/`.
 
 ## Case Study Overview
 
-| # | Name | Purpose | Proteins | Status |
-|---|------|---------|----------|--------|
-| 1 | [SARS-CoV-2](sars_cov_2/) | Pipeline validation with gold-standard proteome | 18 | Pending re-run |
-| 2 | [Remote Homology](remote_homology/) | Annotation at low sequence identity | 10 | Pending re-run |
-| 3 | [Metagenomic Dark Matter](metagenomic_dark_matter/) | Annotate truly unknown proteins | 30 | Pending re-run |
-| 4 | [crAssphage ORFans](crass_phage_orfans/) | Unknown gut phage proteins | 37 | Deprioritized |
-| 5 | [Eukaryotic Viruses](eukaryotic_viruses/) | Mammalian virus annotation (vHold focus) | 27 | Pending re-run |
-| 6 | [T7 Phage](t7_phage/) | Well-characterized phage proteome | 60 | Pending re-run |
+| # | Name | Purpose | Proteins | Priority | Status |
+|---|------|---------|----------|:--------:|--------|
+| 1 | [SARS-CoV-2](sars_cov_2/) | Pipeline validation baseline | 18 | Low | Has results |
+| 2 | [Remote Homology](remote_homology/) | Annotation at low sequence identity | 10 | Medium | Needs rebuild (phage proteins) |
+| 3 | [Metagenomic Dark Matter](metagenomic_dark_matter/) | Annotate unknown phage proteins | 30 | Medium | Needs rebuild (phage contigs) |
+| 4 | [crAssphage ORFans](crass_phage_orfans/) | Unknown gut phage proteins — GO transfer test | 37 | **High** | Pending re-run |
+| 5 | [Eukaryotic Viruses](eukaryotic_viruses/) | Eukaryotic virus annotation | 27 | Low | Deprioritized |
+| 6 | [T7 Phage](t7_phage/) | Gold-standard phage proteome | 60 | **High** | Has results |
 
 ## Novelty Classification
 
