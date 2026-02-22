@@ -52,8 +52,8 @@ from vhold.utils.constants import (
     get_model_dir,
 )
 
-# UniProt XML namespace
-UNIPROT_NS = "{http://uniprot.org/uniprot}"
+# UniProt XML namespace (changed from http to https in 2025/2026 releases)
+UNIPROT_NS = "{https://uniprot.org/uniprot}"
 
 # Download URLs
 SWISSPROT_XML_URL = "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.xml.gz"
